@@ -16,6 +16,20 @@ Supported clean ROM SHA-256:
 
 The build reads the ROM locally to generate the machine-translated CPU sources. Those generated files remain ignored by Git. At runtime, the application asks for the ROM and reads the original assets directly from it; it does not copy the ROM into the AppImage.
 
+## Downloadable AppImage
+
+The public release contains one self-building, ROM-free AppImage. On its first run it:
+
+1. Asks you to select the supported ROM.
+2. Verifies the ROM before doing any build work.
+3. Downloads the pinned open-source dependencies.
+4. Generates the CPU translation and builds the playable AppImage locally.
+5. Starts the game with the selected ROM.
+
+Later launches of that same downloaded AppImage start the locally built game immediately. It stores private build files under `~/.cache/40-winks-pc-port/` and its generated runtime under `~/.local/share/40-winks-pc-port/`. The ROM is never copied or uploaded.
+
+The first build requires the development packages listed in [Building](docs/BUILDING.md) and an internet connection. Use `--rebuild` to rebuild the local game or `--select-rom` to choose the ROM again.
+
 ## Build And Run
 
 ```sh
@@ -23,10 +37,16 @@ make build ROM="/path/to/40-winks.z64"
 make run ROM="/path/to/40-winks.z64"
 ```
 
-Create a local AppImage:
+Developers can create the generated playable AppImage directly:
 
 ```sh
-make appimage ROM="/path/to/40-winks.z64"
+make playable-appimage ROM="/path/to/40-winks.z64"
+```
+
+Build the redistributable self-building AppImage:
+
+```sh
+make appimage
 ```
 
 The first build downloads pinned upstream dependencies, applies this port's patches, builds N64Recomp, verifies the ROM, and generates the required local sources. See [Building](docs/BUILDING.md) for dependencies and troubleshooting.

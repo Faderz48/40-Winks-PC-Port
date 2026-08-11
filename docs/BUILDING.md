@@ -51,10 +51,32 @@ make test ROM="/absolute/path/to/40-winks.z64"
 ## AppImage
 
 ```sh
-make appimage ROM="/absolute/path/to/40-winks.z64"
+make playable-appimage ROM="/absolute/path/to/40-winks.z64"
 ```
 
 The AppImage does not contain the ROM or extracted assets. It asks the player to select their own ROM on first launch. The executable does contain locally generated machine translations of the game CPU code, so this project's publication policy does not permit attaching AppImages to public GitHub releases without separate rights-holder permission and a fresh legal review.
+
+## Self-Building Release AppImage
+
+The redistributable AppImage contains only this public source tree and first-run setup logic:
+
+```sh
+make appimage
+```
+
+It produces `dist/rom-free-appimage/40-Winks-PC-Port-x86_64.AppImage`. That one AppImage performs the normal dependency bootstrap, ROM verification, CPU translation, native build, and runtime packaging on the player's computer. It then starts the game and remains the entry point for later launches.
+
+Optional maintenance commands:
+
+```text
+--rebuild       Rebuild the locally generated playable AppImage
+--select-rom    Ask for the supported ROM again
+--build-only    Build without launching the game
+--rom PATH      Use PATH instead of opening the file chooser
+-- GAME_ARGS    Pass the remaining options to the playable game
+```
+
+Build logs are written to `~/.cache/40-winks-pc-port/build.log`. The generated runtime is stored privately at `~/.local/share/40-winks-pc-port/40-Winks-Recompiled-x86_64.AppImage` and must not be redistributed under this project's publication policy.
 
 ## Updating Dependencies
 

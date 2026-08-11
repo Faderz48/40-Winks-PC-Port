@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=40 Winks PC Port
+Comment=Build and play 40 Winks from your own ROM
+Exec=forty-winks-port-launcher %f
+Icon=io.github.Faderz48.FortyWinksPCPort
+Categories=Game;
+Keywords=40 Winks;Nintendo 64;N64;ROM;recompilation;
+Actions=Rebuild;SelectROM;
+Terminal=false
+
+[Desktop Action Rebuild]
+Name=Rebuild game
+Exec=forty-winks-port-launcher --rebuild
+
+[Desktop Action SelectROM]
+Name=Choose ROM again
+Exec=forty-winks-port-launcher --select-rom

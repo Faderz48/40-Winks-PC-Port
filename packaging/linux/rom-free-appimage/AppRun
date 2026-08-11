@@ -1,0 +1,5 @@
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+
+export FORTY_WINKS_BUILDER_APPDIR="$HERE"
+exec "$HERE/usr/bin/forty-winks-port-launcher" "$@"

@@ -1,0 +1,336 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+APP_TITLE="40 Winks PC Port"
+EXPECTED_SHA256="057232ef7618e25f5645df50d3cd45f08cb5a2cccb3e2fdf48faa8755c4ddb1a"
+APPDIR="${FORTY_WINKS_BUILDER_APPDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+PAYLOAD_DIR="$APPDIR/usr/share/40-winks-pc-port/source"
+VERSION_FILE="$APPDIR/usr/share/40-winks-pc-port/VERSION"
+BUILDER_VERSION="$(cat "$VERSION_FILE" 2>/dev/null || printf 'dev')"
+
+CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}"
+DATA_HOME="${XDG_DATA_HOME:-${HOME:-/tmp}/.local/share}"
+CACHE_HOME="${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}"
+CONFIG_DIR="$CONFIG_HOME/40-winks-pc-port"
+DATA_DIR="$DATA_HOME/40-winks-pc-port"
+CACHE_DIR="$CACHE_HOME/40-winks-pc-port"
+SOURCE_DIR="$CACHE_DIR/source"
+EXTERNAL_DIR="$CACHE_DIR/external/$BUILDER_VERSION"
+BUILD_LOG="$CACHE_DIR/build.log"
+ROM_RECORD="$CONFIG_DIR/rom-path"
+INSTALLED_VERSION="$DATA_DIR/builder-version"
+GAME_APPIMAGE="$DATA_DIR/40-Winks-Recompiled-x86_64.AppImage"
+DIALOG_BACKEND=""
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTION] [ROM]
+
+Build and launch 40 Winks from a user-supplied ROM.
+
+  --rom PATH      use PATH as the ROM
+  --rebuild       rebuild the locally generated playable AppImage
+  --select-rom    open the ROM chooser and rebuild
+  --build-only    build the playable AppImage without launching it
+  -- GAME_ARGS    pass the remaining arguments to the playable game
+  -h, --help      show this help
+EOF
+}
+
+detect_dialog() {
+    if [ -n "$DIALOG_BACKEND" ] || [ "${FORTY_WINKS_BUILDER_NO_GUI:-0}" = "1" ]; then
+        return
+    fi
+
+    if command -v zenity >/dev/null 2>&1; then
+        DIALOG_BACKEND="zenity"
+    elif command -v yad >/dev/null 2>&1; then
+        DIALOG_BACKEND="yad"
+    elif command -v kdialog >/dev/null 2>&1; then
+        DIALOG_BACKEND="kdialog"
+    fi
+}
+
+show_error() {
+    local message="$1"
+    message="${message//\\n/$'\n'}"
+    detect_dialog
+    case "$DIALOG_BACKEND" in
+        zenity) zenity --error --title="$APP_TITLE" --width=680 --text="$message" 2>/dev/null || true ;;
+        yad) yad --error --title="$APP_TITLE" --width=680 --text="$message" 2>/dev/null || true ;;
+        kdialog) kdialog --title "$APP_TITLE" --error "$message" 2>/dev/null || true ;;
+        *) printf '%s: %s\n' "$APP_TITLE" "$message" >&2 ;;
+    esac
+}
+
+show_info() {
+    local message="$1"
+    message="${message//\\n/$'\n'}"
+    detect_dialog
+    case "$DIALOG_BACKEND" in
+        zenity) zenity --info --title="$APP_TITLE" --width=620 --text="$message" 2>/dev/null || true ;;
+        yad) yad --info --title="$APP_TITLE" --width=620 --text="$message" 2>/dev/null || true ;;
+        kdialog) kdialog --title "$APP_TITLE" --msgbox "$message" 2>/dev/null || true ;;
+        *) printf '%s\n' "$message" ;;
+    esac
+}
+
+choose_rom() {
+    local selected=""
+    detect_dialog
+
+    case "$DIALOG_BACKEND" in
+        zenity)
+            selected="$(zenity --file-selection \
+                --title="Choose your 40 Winks N64 ROM" \
+                --filename="${HOME:-/}/Desktop/" \
+                --file-filter="Nintendo 64 ROMs | *.z64 *.n64 *.v64" \
+                --file-filter="All files | *" 2>/dev/null)" || return 1
+            ;;
+        yad)
+            selected="$(yad --file-selection \
+                --title="Choose your 40 Winks N64 ROM" \
+                --filename="${HOME:-/}/Desktop/" 2>/dev/null)" || return 1
+            ;;
+        kdialog)
+            selected="$(kdialog --title "Choose your 40 Winks N64 ROM" \
+                --getopenfilename "${HOME:-/}/Desktop/" \
+                "Nintendo 64 ROMs (*.z64 *.n64 *.v64)" 2>/dev/null)" || return 1
+            ;;
+        *)
+            if [ -t 0 ]; then
+                printf 'Path to your clean 40 Winks ROM: ' >&2
+                IFS= read -r selected || return 1
+            else
+                show_error "No graphical file chooser was found. Install zenity, yad, or kdialog, or drag the ROM onto the AppImage."
+                return 1
+            fi
+            ;;
+    esac
+
+    [ -n "$selected" ] || return 1
+    printf '%s\n' "$selected"
+}
+
+rom_hash() {
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+}
+
+rom_is_valid() {
+    [ -f "$1" ] && [ "$(rom_hash "$1")" = "$EXPECTED_SHA256" ]
+}
+
+validate_rom() {
+    local rom="$1"
+    local actual=""
+
+    if [ ! -f "$rom" ]; then
+        show_error "ROM not found:\n$rom"
+        return 1
+    fi
+
+    actual="$(rom_hash "$rom")"
+    if [ "$actual" != "$EXPECTED_SHA256" ]; then
+        show_error "Unsupported ROM revision.\n\nExpected SHA-256:\n$EXPECTED_SHA256\n\nSelected file SHA-256:\n$actual"
+        return 1
+    fi
+
+    return 0
+}
+
+check_build_tools() {
+    local tool=""
+    local missing=()
+    local required=(awk bash cc c++ cmake curl git install ldd make pkg-config python3 readlink sha256sum)
+
+    for tool in "${required[@]}"; do
+        command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+    done
+
+    if [ "${#missing[@]}" -ne 0 ]; then
+        show_error "Some build tools are missing: ${missing[*]}\n\nInstall the Linux build requirements listed at:\nhttps://github.com/Faderz48/40-Winks-PC-Port/blob/main/docs/BUILDING.md"
+        return 1
+    fi
+
+    return 0
+}
+
+prepare_source_tree() {
+    local staged_source="$CACHE_DIR/source.next"
+
+    if [ ! -d "$PAYLOAD_DIR" ]; then
+        show_error "The launcher source payload is missing. Download the AppImage again from the official GitHub release."
+        return 1
+    fi
+
+    if [ ! -f "$SOURCE_DIR/.builder-version" ] || \
+       [ "$(cat "$SOURCE_DIR/.builder-version" 2>/dev/null)" != "$BUILDER_VERSION" ]; then
+        rm -rf "$staged_source" || return 1
+        mkdir -p "$staged_source" || return 1
+        if ! cp -a "$PAYLOAD_DIR/." "$staged_source/"; then
+            show_error "The bundled source could not be copied into the private build cache."
+            return 1
+        fi
+        printf '%s\n' "$BUILDER_VERSION" > "$staged_source/.builder-version" || return 1
+        rm -rf "$SOURCE_DIR" || return 1
+        mv "$staged_source" "$SOURCE_DIR" || return 1
+    fi
+
+    mkdir -p "$EXTERNAL_DIR" "$SOURCE_DIR/work" || return 1
+    rm -rf "$SOURCE_DIR/work/external" || return 1
+    ln -s "$EXTERNAL_DIR" "$SOURCE_DIR/work/external" || return 1
+}
+
+run_build_command() {
+    local rom="$1"
+    local jobs="${FORTY_WINKS_BUILD_JOBS:-2}"
+
+    (
+        unset APPDIR APPIMAGE ARGV0 OWD
+        cd "$SOURCE_DIR" || exit 1
+        make playable-appimage ROM="$rom" JOBS="$jobs"
+    )
+}
+
+build_game() {
+    local rom="$1"
+    local build_pid=0
+    local build_status=0
+    local progress_pid=0
+    local built_appimage="$SOURCE_DIR/dist/recomp-appimage/40-Winks-Recompiled-x86_64.AppImage"
+    local error_tail=""
+
+    mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR"
+    : > "$BUILD_LOG"
+    detect_dialog
+
+    if [ "$DIALOG_BACKEND" = "zenity" ] || [ "$DIALOG_BACKEND" = "yad" ]; then
+        run_build_command "$rom" >"$BUILD_LOG" 2>&1 &
+        build_pid=$!
+
+        (
+            while kill -0 "$build_pid" 2>/dev/null; do
+                printf '50\n# Building the playable game locally...\n'
+                sleep 1
+            done
+            printf '100\n# Build complete\n'
+        ) | "$DIALOG_BACKEND" --progress --pulsate --auto-close --no-cancel \
+            --title="$APP_TITLE" --width=540 \
+            --text="Preparing the first playable build. This can take several minutes." \
+            2>/dev/null &
+        progress_pid=$!
+
+        wait "$build_pid"
+        build_status=$?
+        wait "$progress_pid" 2>/dev/null || true
+    else
+        show_info "The local game build is starting. The first build can take several minutes.\n\nBuild log:\n$BUILD_LOG"
+        run_build_command "$rom" 2>&1 | tee "$BUILD_LOG"
+        build_status=${PIPESTATUS[0]}
+    fi
+
+    if [ "$build_status" -ne 0 ]; then
+        error_tail="$(tail -n 18 "$BUILD_LOG" 2>/dev/null || true)"
+        show_error "The playable build did not complete.\n\nBuild log:\n$BUILD_LOG\n\nLast output:\n$error_tail"
+        return 1
+    fi
+
+    if [ ! -s "$built_appimage" ]; then
+        show_error "The build completed without producing the expected playable AppImage.\n\nBuild log:\n$BUILD_LOG"
+        return 1
+    fi
+
+    if ! install -m 755 "$built_appimage" "$GAME_APPIMAGE.new" || \
+       ! mv "$GAME_APPIMAGE.new" "$GAME_APPIMAGE" || \
+       ! printf '%s\n' "$rom" > "$ROM_RECORD.new" || \
+       ! mv "$ROM_RECORD.new" "$ROM_RECORD" || \
+       ! printf '%s\n' "$BUILDER_VERSION" > "$INSTALLED_VERSION.new" || \
+       ! mv "$INSTALLED_VERSION.new" "$INSTALLED_VERSION"; then
+        show_error "The playable build succeeded but could not be installed under:\n$DATA_DIR"
+        return 1
+    fi
+    return 0
+}
+
+launch_game() {
+    local rom="$1"
+    shift
+
+    unset FORTY_WINKS_BUILDER_APPDIR APPDIR APPIMAGE ARGV0 OWD
+    export APPIMAGE_EXTRACT_AND_RUN=1
+    exec "$GAME_APPIMAGE" --rom "$rom" "$@"
+}
+
+MODE="auto"
+ROM_PATH=""
+ROM_EXPLICIT=0
+GAME_ARGS=()
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --rom)
+            shift
+            if [ "$#" -eq 0 ]; then
+                show_error "--rom requires a file path."
+                exit 2
+            fi
+            ROM_PATH="$1"
+            ROM_EXPLICIT=1
+            ;;
+        --rebuild) MODE="rebuild" ;;
+        --select-rom) MODE="select" ;;
+        --build-only) MODE="build-only" ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            GAME_ARGS=("$@")
+            break
+            ;;
+        -*)
+            show_error "Unknown option: $1"
+            exit 2
+            ;;
+        *)
+            if [ -n "$ROM_PATH" ]; then
+                show_error "Only one ROM path may be supplied."
+                exit 2
+            fi
+            ROM_PATH="$1"
+            ROM_EXPLICIT=1
+            ;;
+    esac
+    shift
+done
+
+mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR"
+
+if [ -z "$ROM_PATH" ] && [ "$MODE" != "select" ] && [ -f "$ROM_RECORD" ]; then
+    ROM_PATH="$(head -n 1 "$ROM_RECORD")"
+fi
+
+if [ "$MODE" = "auto" ] && [ -x "$GAME_APPIMAGE" ] && \
+   [ -f "$INSTALLED_VERSION" ] && \
+   [ "$(cat "$INSTALLED_VERSION" 2>/dev/null)" = "$BUILDER_VERSION" ] && \
+   [ -n "$ROM_PATH" ] && rom_is_valid "$ROM_PATH"; then
+    launch_game "$ROM_PATH" "${GAME_ARGS[@]}"
+fi
+
+if [ "$MODE" = "select" ] || [ -z "$ROM_PATH" ] || \
+   { [ "$ROM_EXPLICIT" -eq 0 ] && ! rom_is_valid "$ROM_PATH"; }; then
+    ROM_PATH="$(choose_rom)" || exit 0
+fi
+
+validate_rom "$ROM_PATH" || exit 1
+check_build_tools || exit 1
+prepare_source_tree || exit 1
+build_game "$ROM_PATH" || exit 1
+
+if [ "$MODE" = "build-only" ]; then
+    show_info "The playable build is ready at:\n$GAME_APPIMAGE"
+    exit 0
+fi
+
+launch_game "$ROM_PATH" "${GAME_ARGS[@]}"

@@ -14,3 +14,26 @@ jobs:
       - uses: actions/checkout@v4
       - name: Reject ROM-derived and binary content
         run: tools/check_public_tree.sh
+      - name: Check AppImage setup scripts
+        run: |
+          bash -n \
+            packaging/linux/rom-free-appimage/AppRun \
+            packaging/linux/rom-free-appimage/build_appimage.sh \
+            packaging/linux/rom-free-appimage/forty-winks-port-launcher
+      - name: Reject an unsupported ROM before setup
+        run: |
+          temp_dir="$(mktemp -d)"
+          printf 'not a ROM\n' > "$temp_dir/unsupported.z64"
+          set +e
+          HOME="$temp_dir/home" \
+          XDG_CONFIG_HOME="$temp_dir/config" \
+          XDG_DATA_HOME="$temp_dir/data" \
+          XDG_CACHE_HOME="$temp_dir/cache" \
+          FORTY_WINKS_BUILDER_APPDIR="$PWD" \
+          FORTY_WINKS_BUILDER_NO_GUI=1 \
+            packaging/linux/rom-free-appimage/forty-winks-port-launcher \
+              --build-only --rom "$temp_dir/unsupported.z64"
+          status=$?
+          set -e
+          test "$status" -eq 1
+          test ! -e "$temp_dir/cache/40-winks-pc-port/source"

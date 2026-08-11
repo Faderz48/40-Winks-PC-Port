@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.Faderz48.FortyWinksPCPort</id>
+  <name>40 Winks PC Port</name>
+  <summary>Build and play 40 Winks from your own ROM</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <url type="homepage">https://github.com/Faderz48/40-Winks-PC-Port</url>
+  <url type="bugtracker">https://github.com/Faderz48/40-Winks-PC-Port/issues</url>
+  <developer id="io.github.faderz48">
+    <name>Faderz48</name>
+  </developer>
+  <description>
+    <p>
+      A self-building native Linux port of 40 Winks. On first launch it
+      verifies a user-supplied ROM, generates the CPU translation locally,
+      builds the playable runtime, and starts the game.
+    </p>
+    <p>
+      No ROM, extracted game asset, or generated game program is included in
+      the downloadable AppImage.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.Faderz48.FortyWinksPCPort.desktop</launchable>
+  <categories>
+    <category>Game</category>
+  </categories>
+  <provides>
+    <binary>forty-winks-port-launcher</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0-alpha" date="2026-08-11" type="development">
+      <description>
+        <p>First self-building AppImage with automatic local recompilation and launch.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

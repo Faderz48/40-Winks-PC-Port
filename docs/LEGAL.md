@@ -16,7 +16,8 @@ This is a conservative repository policy, not legal advice.
 - Extracted textures, models, audio, video, fonts, or text dumps
 - Disassembly and private reverse-engineering output
 - N64Recomp-generated translations of the original game program
-- Executables, AppImages, object files, screenshots, and save files
+- Executables, AppImages, or object files containing generated game translations
+- Screenshots, captures, and save files containing game content
 
 Every contributor must obtain their own lawful copy of the supported game and perform generation locally. Do not request, link to, or share ROM downloads in this repository.
 
@@ -27,6 +28,8 @@ New Zealand's Copyright Act 1994 section 80A provides a limited decompilation ex
 GitHub can remove material in response to copyright claims under its [DMCA Takedown Policy](https://docs.github.com/en/site-policy/content-removal-policies/dmca-takedown-policy). Keeping game-derived output outside the repository reduces that risk but cannot guarantee that a rights holder will agree with every interoperability decision.
 
 Before distributing a binary, seek qualified legal advice or written permission from the relevant rights holders. Requiring a ROM at runtime prevents redistribution of assets, but the current executable also contains locally generated translations of CPU instructions.
+
+The project's public release AppImage is a ROM-free, self-building application. It contains the audited public source and redistributable setup code, then performs CPU translation and game compilation only on the lawful user's computer. The locally generated runtime remains excluded from public releases.
 
 ## Licensing
 

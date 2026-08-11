@@ -2,7 +2,7 @@ ROM ?=
 BUILD_DIR ?= build/recomp-port
 JOBS ?= 2
 
-.PHONY: all appimage bootstrap build clean distclean prepare run source-audit test
+.PHONY: all appimage bootstrap build clean distclean playable-appimage prepare run source-audit test
 
 all: build
 
@@ -25,8 +25,11 @@ test: build
 		controller-pak-test debug-level-test input-routing-test split-screen-patch-test
 	ctest --test-dir "$(BUILD_DIR)" --output-on-failure
 
-appimage: prepare
+playable-appimage: prepare
 	JOBS="$(JOBS)" packaging/linux/recomp-appimage/build_appimage.sh
+
+appimage:
+	packaging/linux/rom-free-appimage/build_appimage.sh
 
 source-audit:
 	tools/check_public_tree.sh
