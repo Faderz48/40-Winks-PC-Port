@@ -37,3 +37,18 @@ jobs:
           set -e
           test "$status" -eq 1
           test ! -e "$temp_dir/cache/40-winks-pc-port/source"
+      - name: Check percentage progress mapping
+        run: |
+          progress_log="$(mktemp)"
+          printf '%s\n' \
+            'Pinned dependencies are ready.' \
+            'Generated local recompilation sources from the verified user ROM.' \
+            '-- Build files have been written to: /tmp/build/recomp-appimage' \
+            '[ 50%] Building CXX object runtime.cpp.o' \
+            > "$progress_log"
+          progress_state="$(
+            FORTY_WINKS_BUILDER_APPDIR="$PWD" \
+            FORTY_WINKS_PROGRESS_LOG_ONLY="$progress_log" \
+              packaging/linux/rom-free-appimage/forty-winks-port-launcher
+          )"
+          test "$progress_state" = '72|Compiling playable runtime'

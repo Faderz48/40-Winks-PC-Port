@@ -7,7 +7,8 @@ APPDIR="$BUILD_DIR/AppDir"
 TOOLS_DIR="$ROOT_DIR/dist/tools"
 APP_ID="io.github.Faderz48.FortyWinksPCPort"
 APP_NAME="40-Winks-PC-Port"
-VERSION="${VERSION:-0.1.0-alpha}"
+VERSION="${VERSION:-0.1.1-alpha}"
+BUILD_ID="${BUILD_ID:-0.1.0-alpha}"
 SOURCE_REF="${SOURCE_REF:-HEAD}"
 APPIMAGETOOL="${APPIMAGETOOL:-}"
 
@@ -52,6 +53,7 @@ install -Dm644 "$ROOT_DIR/THIRD_PARTY_NOTICES.md" \
 install -Dm644 "$ROOT_DIR/LICENSES/AppImageKit.txt" \
     "$APPDIR/usr/share/doc/40-winks-pc-port/AppImageKit.txt"
 printf '%s\n' "$VERSION" > "$APPDIR/usr/share/40-winks-pc-port/VERSION"
+printf '%s\n' "$BUILD_ID" > "$APPDIR/usr/share/40-winks-pc-port/BUILD_ID"
 
 if command -v magick >/dev/null 2>&1; then
     magick "$APPDIR/$APP_ID.svg" "$APPDIR/$APP_ID.png"

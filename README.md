@@ -22,11 +22,12 @@ The public release contains one self-building, ROM-free AppImage. On its first r
 
 1. Asks you to select the supported ROM.
 2. Verifies the ROM before doing any build work.
-3. Downloads the pinned open-source dependencies.
-4. Generates the CPU translation and builds the playable AppImage locally.
-5. Starts the game with the selected ROM.
+3. Asks where to put the finished playable AppImage.
+4. Downloads the pinned open-source dependencies.
+5. Generates the CPU translation and builds the playable AppImage locally.
+6. Starts the game with the selected ROM.
 
-Later launches of that same downloaded AppImage start the locally built game immediately. It stores private build files under `~/.cache/40-winks-pc-port/` and its generated runtime under `~/.local/share/40-winks-pc-port/`. The ROM is never copied or uploaded.
+The first build displays a 0-100% progress bar with the current download, CPU-generation, compilation, or packaging phase. Later launches of that same downloaded AppImage start the locally built game immediately. It stores private build files under `~/.cache/40-winks-pc-port/` and remembers the chosen location of the playable AppImage. The ROM is never copied or uploaded.
 
 The first build requires the development packages listed in [Building](docs/BUILDING.md) and an internet connection. Use `--rebuild` to rebuild the local game or `--select-rom` to choose the ROM again.
 

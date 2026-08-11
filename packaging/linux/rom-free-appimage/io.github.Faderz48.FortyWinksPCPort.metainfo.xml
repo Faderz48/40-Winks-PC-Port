@@ -29,6 +29,11 @@
     <binary>forty-winks-port-launcher</binary>
   </provides>
   <releases>
+    <release version="0.1.1-alpha" date="2026-08-11" type="development">
+      <description>
+        <p>Adds measurable first-build progress and a playable-build destination chooser.</p>
+      </description>
+    </release>
     <release version="0.1.0-alpha" date="2026-08-11" type="development">
       <description>
         <p>First self-building AppImage with automatic local recompilation and launch.</p>

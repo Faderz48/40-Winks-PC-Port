@@ -71,12 +71,14 @@ Optional maintenance commands:
 ```text
 --rebuild       Rebuild the locally generated playable AppImage
 --select-rom    Ask for the supported ROM again
+--choose-output Choose where the playable AppImage is installed
+--output PATH   Install the playable AppImage at PATH
 --build-only    Build without launching the game
 --rom PATH      Use PATH instead of opening the file chooser
 -- GAME_ARGS    Pass the remaining options to the playable game
 ```
 
-Build logs are written to `~/.cache/40-winks-pc-port/build.log`. The generated runtime is stored privately at `~/.local/share/40-winks-pc-port/40-Winks-Recompiled-x86_64.AppImage` and must not be redistributed under this project's publication policy.
+Build logs are written to `~/.cache/40-winks-pc-port/build.log`. On first setup the application asks where to install the generated playable AppImage, defaults to `~/Applications/40-Winks-Recompiled-x86_64.AppImage`, and remembers that choice. The generated runtime must not be redistributed under this project's publication policy.
 
 ## Updating Dependencies
 

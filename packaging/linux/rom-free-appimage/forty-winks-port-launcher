@@ -7,6 +7,9 @@ APPDIR="${FORTY_WINKS_BUILDER_APPDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../..
 PAYLOAD_DIR="$APPDIR/usr/share/40-winks-pc-port/source"
 VERSION_FILE="$APPDIR/usr/share/40-winks-pc-port/VERSION"
 BUILDER_VERSION="$(cat "$VERSION_FILE" 2>/dev/null || printf 'dev')"
+BUILD_ID_FILE="$APPDIR/usr/share/40-winks-pc-port/BUILD_ID"
+PORT_BUILD_ID="$(cat "$BUILD_ID_FILE" 2>/dev/null || printf '%s' "$BUILDER_VERSION")"
+PUBLIC_APPIMAGE="${APPIMAGE:-}"
 
 CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME:-/tmp}/.config}"
 DATA_HOME="${XDG_DATA_HOME:-${HOME:-/tmp}/.local/share}"
@@ -15,11 +18,13 @@ CONFIG_DIR="$CONFIG_HOME/40-winks-pc-port"
 DATA_DIR="$DATA_HOME/40-winks-pc-port"
 CACHE_DIR="$CACHE_HOME/40-winks-pc-port"
 SOURCE_DIR="$CACHE_DIR/source"
-EXTERNAL_DIR="$CACHE_DIR/external/$BUILDER_VERSION"
+EXTERNAL_DIR="$CACHE_DIR/external/$PORT_BUILD_ID"
 BUILD_LOG="$CACHE_DIR/build.log"
 ROM_RECORD="$CONFIG_DIR/rom-path"
+GAME_PATH_RECORD="$CONFIG_DIR/playable-path"
 INSTALLED_VERSION="$DATA_DIR/builder-version"
-GAME_APPIMAGE="$DATA_DIR/40-Winks-Recompiled-x86_64.AppImage"
+DEFAULT_GAME_APPIMAGE="$DATA_DIR/40-Winks-Recompiled-x86_64.AppImage"
+GAME_APPIMAGE="$DEFAULT_GAME_APPIMAGE"
 DIALOG_BACKEND=""
 
 usage() {
@@ -31,6 +36,8 @@ Build and launch 40 Winks from a user-supplied ROM.
   --rom PATH      use PATH as the ROM
   --rebuild       rebuild the locally generated playable AppImage
   --select-rom    open the ROM chooser and rebuild
+  --choose-output choose where the playable AppImage is installed
+  --output PATH   install the playable AppImage at PATH
   --build-only    build the playable AppImage without launching it
   -- GAME_ARGS    pass the remaining arguments to the playable game
   -h, --help      show this help
@@ -112,6 +119,82 @@ choose_rom() {
     printf '%s\n' "$selected"
 }
 
+normalize_output_path() {
+    local selected="$1"
+
+    case "$selected" in
+        /*) ;;
+        *) selected="$PWD/$selected" ;;
+    esac
+
+    case "$selected" in
+        *.AppImage) ;;
+        *) selected="$selected.AppImage" ;;
+    esac
+
+    readlink -m -- "$selected"
+}
+
+choose_output_path() {
+    local applications_dir="${HOME:-/tmp}/Applications"
+    local suggested="$applications_dir/40-Winks-Recompiled-x86_64.AppImage"
+    local selected=""
+
+    mkdir -p "$applications_dir" 2>/dev/null || true
+    detect_dialog
+
+    case "$DIALOG_BACKEND" in
+        zenity)
+            selected="$(zenity --file-selection --save --confirm-overwrite \
+                --title="Choose where to put the playable build" \
+                --filename="$suggested" \
+                --file-filter="AppImage | *.AppImage" \
+                --file-filter="All files | *" 2>/dev/null)" || return 1
+            ;;
+        yad)
+            selected="$(yad --file-selection --save --confirm-overwrite \
+                --title="Choose where to put the playable build" \
+                --filename="$suggested" 2>/dev/null)" || return 1
+            ;;
+        kdialog)
+            selected="$(kdialog --title "Choose where to put the playable build" \
+                --getsavefilename "$suggested" \
+                "AppImage (*.AppImage)" 2>/dev/null)" || return 1
+            ;;
+        *)
+            if [ -t 0 ]; then
+                printf 'Playable AppImage path [%s]: ' "$suggested" >&2
+                IFS= read -r selected || return 1
+                [ -n "$selected" ] || selected="$suggested"
+            else
+                show_error "No graphical file chooser was found. Install zenity, yad, or kdialog, or use --output PATH."
+                return 1
+            fi
+            ;;
+    esac
+
+    [ -n "$selected" ] || return 1
+    normalize_output_path "$selected"
+}
+
+validate_output_path() {
+    local output_path="$1"
+    local rom_path="$2"
+
+    if [ "$output_path" = "$(readlink -m -- "$rom_path")" ]; then
+        show_error "The playable build cannot replace the selected ROM. Choose a different output path."
+        return 1
+    fi
+
+    if [ -n "$PUBLIC_APPIMAGE" ] && \
+       [ "$output_path" = "$(readlink -m -- "$PUBLIC_APPIMAGE")" ]; then
+        show_error "The playable build cannot replace the self-building AppImage. Choose a different output path."
+        return 1
+    fi
+
+    return 0
+}
+
 rom_hash() {
     sha256sum "$1" 2>/dev/null | awk '{print $1}'
 }
@@ -164,14 +247,14 @@ prepare_source_tree() {
     fi
 
     if [ ! -f "$SOURCE_DIR/.builder-version" ] || \
-       [ "$(cat "$SOURCE_DIR/.builder-version" 2>/dev/null)" != "$BUILDER_VERSION" ]; then
+       [ "$(cat "$SOURCE_DIR/.builder-version" 2>/dev/null)" != "$PORT_BUILD_ID" ]; then
         rm -rf "$staged_source" || return 1
         mkdir -p "$staged_source" || return 1
         if ! cp -a "$PAYLOAD_DIR/." "$staged_source/"; then
             show_error "The bundled source could not be copied into the private build cache."
             return 1
         fi
-        printf '%s\n' "$BUILDER_VERSION" > "$staged_source/.builder-version" || return 1
+        printf '%s\n' "$PORT_BUILD_ID" > "$staged_source/.builder-version" || return 1
         rm -rf "$SOURCE_DIR" || return 1
         mv "$staged_source" "$SOURCE_DIR" || return 1
     fi
@@ -192,6 +275,87 @@ run_build_command() {
     )
 }
 
+estimate_build_progress() {
+    local log_file="$1"
+
+    if [ ! -s "$log_file" ]; then
+        printf '2|Preparing local build'
+        return
+    fi
+
+    awk '
+        BEGIN {
+            submodules = 0
+            tool_percent = 0
+            runtime_percent = 0
+        }
+        {
+            line = $0
+
+            if (line ~ /Cloning into .*N64Recomp/) clone_n64 = 1
+            if (line ~ /Cloning into .*N64ModernRuntime/) clone_runtime = 1
+            if (line ~ /Cloning into .*rt64/) clone_rt64 = 1
+            if (line ~ /^Submodule path /) submodules++
+            if (line ~ /Build files have been written to: .*\/N64Recomp\/build/) tool_started = 1
+            if (line ~ /Pinned dependencies are ready/) dependencies_ready = 1
+            if (line ~ /Generated [0-9]+ function symbols/) symbols_generated = 1
+            if (line ~ /Generated local recompilation sources/) cpu_generated = 1
+            if (line ~ /Build files have been written to: .*\/build\/recomp-appimage/) runtime_started = 1
+
+            if (line ~ /^\[[[:space:]]*[0-9]+%\]/) {
+                percent = line
+                sub(/^\[[[:space:]]*/, "", percent)
+                sub(/%.*/, "", percent)
+                if (runtime_started) runtime_percent = percent + 0
+                else if (tool_started) tool_percent = percent + 0
+            }
+
+            if (line ~ /Installing: .*\/usr\/bin\/forty-winks-recomp/) runtime_installed = 1
+            if (line ~ /^Generating squashfs/) packaging = 1
+            if (line ~ /^Success[[:space:]]*$/) packaged = 1
+        }
+        END {
+            progress = 2
+            status = "Preparing local build"
+
+            if (packaged) {
+                progress = 99
+                status = "Finalizing playable build"
+            } else if (packaging) {
+                progress = 97
+                status = "Packaging playable game"
+            } else if (runtime_installed) {
+                progress = 94
+                status = "Installing playable runtime"
+            } else if (runtime_started) {
+                progress = 52 + int(runtime_percent * 40 / 100)
+                status = "Compiling playable runtime"
+            } else if (cpu_generated) {
+                progress = 50
+                status = "Configuring playable runtime"
+            } else if (symbols_generated) {
+                progress = 47
+                status = "Generating CPU translation"
+            } else if (dependencies_ready) {
+                progress = 44
+                status = "Generating CPU translation"
+            } else if (tool_started) {
+                progress = 20 + int(tool_percent * 22 / 100)
+                status = "Building CPU translation tools"
+            } else {
+                progress = 4 + int(submodules * 14 / 35)
+                if (progress > 18) progress = 18
+                if (clone_n64 && progress < 5) progress = 5
+                if (clone_runtime && progress < 9) progress = 9
+                if (clone_rt64 && progress < 14) progress = 14
+                status = "Downloading build dependencies"
+            }
+
+            printf "%d|%s", progress, status
+        }
+    ' "$log_file"
+}
+
 build_game() {
     local rom="$1"
     local build_pid=0
@@ -199,8 +363,14 @@ build_game() {
     local progress_pid=0
     local built_appimage="$SOURCE_DIR/dist/recomp-appimage/40-Winks-Recompiled-x86_64.AppImage"
     local error_tail=""
+    local output_dir=""
 
     mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR"
+    output_dir="$(dirname "$GAME_APPIMAGE")"
+    if ! mkdir -p "$output_dir"; then
+        show_error "The selected output folder could not be created:\n$output_dir"
+        return 1
+    fi
     : > "$BUILD_LOG"
     detect_dialog
 
@@ -209,12 +379,26 @@ build_game() {
         build_pid=$!
 
         (
+            last_progress=0
+            printf '0\n# 0%% - Starting local build\n'
             while kill -0 "$build_pid" 2>/dev/null; do
-                printf '50\n# Building the playable game locally...\n'
+                progress_state="$(estimate_build_progress "$BUILD_LOG")"
+                progress="${progress_state%%|*}"
+                progress_status="${progress_state#*|}"
+
+                case "$progress" in
+                    ''|*[!0-9]*) progress="$last_progress" ;;
+                esac
+                if [ "$progress" -lt "$last_progress" ]; then
+                    progress="$last_progress"
+                fi
+                last_progress="$progress"
+
+                printf '%s\n# %s%% - %s\n' "$progress" "$progress" "$progress_status"
                 sleep 1
             done
             printf '100\n# Build complete\n'
-        ) | "$DIALOG_BACKEND" --progress --pulsate --auto-close --no-cancel \
+        ) | "$DIALOG_BACKEND" --progress --auto-close --no-cancel \
             --title="$APP_TITLE" --width=540 \
             --text="Preparing the first playable build. This can take several minutes." \
             2>/dev/null &
@@ -244,13 +428,21 @@ build_game() {
        ! mv "$GAME_APPIMAGE.new" "$GAME_APPIMAGE" || \
        ! printf '%s\n' "$rom" > "$ROM_RECORD.new" || \
        ! mv "$ROM_RECORD.new" "$ROM_RECORD" || \
-       ! printf '%s\n' "$BUILDER_VERSION" > "$INSTALLED_VERSION.new" || \
+       ! printf '%s\n' "$GAME_APPIMAGE" > "$GAME_PATH_RECORD.new" || \
+       ! mv "$GAME_PATH_RECORD.new" "$GAME_PATH_RECORD" || \
+       ! printf '%s\n' "$PORT_BUILD_ID" > "$INSTALLED_VERSION.new" || \
        ! mv "$INSTALLED_VERSION.new" "$INSTALLED_VERSION"; then
         show_error "The playable build succeeded but could not be installed under:\n$DATA_DIR"
         return 1
     fi
     return 0
 }
+
+if [ -n "${FORTY_WINKS_PROGRESS_LOG_ONLY:-}" ]; then
+    estimate_build_progress "$FORTY_WINKS_PROGRESS_LOG_ONLY"
+    printf '\n'
+    exit 0
+fi
 
 launch_game() {
     local rom="$1"
@@ -264,6 +456,8 @@ launch_game() {
 MODE="auto"
 ROM_PATH=""
 ROM_EXPLICIT=0
+CHOOSE_OUTPUT=0
+OUTPUT_EXPLICIT=0
 GAME_ARGS=()
 
 while [ "$#" -gt 0 ]; do
@@ -279,6 +473,16 @@ while [ "$#" -gt 0 ]; do
             ;;
         --rebuild) MODE="rebuild" ;;
         --select-rom) MODE="select" ;;
+        --choose-output) CHOOSE_OUTPUT=1 ;;
+        --output)
+            shift
+            if [ "$#" -eq 0 ]; then
+                show_error "--output requires a file path."
+                exit 2
+            fi
+            GAME_APPIMAGE="$(normalize_output_path "$1")"
+            OUTPUT_EXPLICIT=1
+            ;;
         --build-only) MODE="build-only" ;;
         -h|--help)
             usage
@@ -307,13 +511,21 @@ done
 
 mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$CACHE_DIR"
 
+if [ "$OUTPUT_EXPLICIT" -eq 0 ] && [ -f "$GAME_PATH_RECORD" ]; then
+    saved_game_path="$(head -n 1 "$GAME_PATH_RECORD")"
+    if [ -n "$saved_game_path" ]; then
+        GAME_APPIMAGE="$saved_game_path"
+    fi
+fi
+
 if [ -z "$ROM_PATH" ] && [ "$MODE" != "select" ] && [ -f "$ROM_RECORD" ]; then
     ROM_PATH="$(head -n 1 "$ROM_RECORD")"
 fi
 
 if [ "$MODE" = "auto" ] && [ -x "$GAME_APPIMAGE" ] && \
+   [ "$CHOOSE_OUTPUT" -eq 0 ] && [ "$OUTPUT_EXPLICIT" -eq 0 ] && \
    [ -f "$INSTALLED_VERSION" ] && \
-   [ "$(cat "$INSTALLED_VERSION" 2>/dev/null)" = "$BUILDER_VERSION" ] && \
+   [ "$(cat "$INSTALLED_VERSION" 2>/dev/null)" = "$PORT_BUILD_ID" ] && \
    [ -n "$ROM_PATH" ] && rom_is_valid "$ROM_PATH"; then
     launch_game "$ROM_PATH" "${GAME_ARGS[@]}"
 fi
@@ -324,6 +536,13 @@ if [ "$MODE" = "select" ] || [ -z "$ROM_PATH" ] || \
 fi
 
 validate_rom "$ROM_PATH" || exit 1
+
+if [ "$OUTPUT_EXPLICIT" -eq 0 ] && \
+   { [ "$CHOOSE_OUTPUT" -eq 1 ] || [ ! -x "$GAME_APPIMAGE" ]; }; then
+    GAME_APPIMAGE="$(choose_output_path)" || exit 0
+fi
+
+validate_output_path "$GAME_APPIMAGE" "$ROM_PATH" || exit 1
 check_build_tools || exit 1
 prepare_source_tree || exit 1
 build_game "$ROM_PATH" || exit 1
