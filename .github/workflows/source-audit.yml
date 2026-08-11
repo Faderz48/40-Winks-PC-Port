@@ -1,0 +1,16 @@
+name: Source audit
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject ROM-derived and binary content
+        run: tools/check_public_tree.sh

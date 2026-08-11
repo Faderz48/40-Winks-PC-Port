@@ -1,0 +1,12 @@
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index 518529d..1043aed 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -8,6 +8,7 @@
+ #include <mutex>
+ #include <queue>
+ #include <cstring>
++#include <cstdio>
+ 
+ #include "blockingconcurrentqueue.h"
+ 

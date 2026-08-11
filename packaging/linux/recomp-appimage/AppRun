@@ -1,0 +1,35 @@
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+
+export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
+
+if [ "$#" -eq 1 ]; then
+    case "$1" in
+        -*) ;;
+        *) set -- --rom "$1" ;;
+    esac
+fi
+
+if [ "$#" -eq 0 ]; then
+    if [ -n "${FORTY_WINKS_ROM:-}" ]; then
+        set -- --rom "$FORTY_WINKS_ROM"
+    elif command -v zenity >/dev/null 2>&1; then
+        ROM_PATH="$(zenity \
+            --file-selection \
+            --title="Choose your 40 Winks N64 ROM" \
+            --filename="${HOME:-/}/Desktop/" \
+            --file-filter="Nintendo 64 ROMs | *.z64 *.n64 *.v64" \
+            --file-filter="All files | *" 2>/dev/null)" || exit 0
+        [ -n "$ROM_PATH" ] || exit 0
+        set -- --rom "$ROM_PATH"
+    elif command -v kdialog >/dev/null 2>&1; then
+        ROM_PATH="$(kdialog \
+            --title "Choose your 40 Winks N64 ROM" \
+            --getopenfilename "${HOME:-/}/Desktop/" \
+            "Nintendo 64 ROMs (*.z64 *.n64 *.v64)" 2>/dev/null)" || exit 0
+        [ -n "$ROM_PATH" ] || exit 0
+        set -- --rom "$ROM_PATH"
+    fi
+fi
+
+exec "$HERE/usr/bin/forty-winks-recomp" "$@"

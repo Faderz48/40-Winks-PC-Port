@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=40 Winks Recompiled
+Comment=Native Linux recompilation of 40 Winks
+Exec=forty-winks-recomp %f
+Icon=io.github.Faderz48.FortyWinksRecompiled
+Categories=Game;Emulator;
+Keywords=40 Winks;Nintendo 64;N64;ROM;recompilation;
+StartupWMClass=forty-winks-recomp
+Terminal=false

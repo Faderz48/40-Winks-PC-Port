@@ -1,0 +1,58 @@
+# User-supplied game files. These must never enter version control.
+*.z64
+*.n64
+*.v64
+*.rom
+*.ips
+baserom*
+
+# ROM-derived output and private reverse-engineering notes.
+analysis/
+recomp/generated/
+
+# The retired exploratory renderer is retained locally for reference only.
+pc-port/
+
+# Downloaded dependencies and local build/package output.
+work/
+build/
+dist/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# Keep only the public-facing documentation and generation tools.
+docs/*
+!docs/BUILDING.md
+!docs/LEGAL.md
+tools/*
+!tools/bootstrap_dependencies.sh
+!tools/check_public_tree.sh
+!tools/generate_recomp_symbols.py
+!tools/prepare_recomp.sh
+
+# Legacy AppImage prototype packaging is not part of the active port.
+packaging/linux/appimage/
+
+# Build products and captures.
+*.AppImage
+*.elf
+*.o
+*.a
+*.so
+*.so.*
+*.dll
+*.exe
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# Editor and language caches.
+__pycache__/
+*.py[cod]
+.cache/
+.idea/
+.vscode/
+*~

@@ -1,0 +1,165 @@
+[input]
+entrypoint = 0x80000400
+symbols_file_path = "generated/40winks.syms.toml"
+rom_file_path = "baserom.z64"
+output_func_path = "generated/RecompiledFuncs"
+recomp_include = "#include \"recomp_support.h\""
+functions_per_output_file = 100
+
+[patches]
+stubs = []
+ignored = []
+
+# Host memory is coherent, so the N64 CPU cache-maintenance operations are NOPs.
+instruction = [
+    { func = "func_800339A0", vram = 0x800339E0, value = 0x00000000 },
+    { func = "func_800339A0", vram = 0x80033A04, value = 0x00000000 },
+    { func = "func_800339A0", vram = 0x80033A14, value = 0x00000000 },
+    { func = "func_800339A0", vram = 0x80033A38, value = 0x00000000 },
+    { func = "func_80033A50", vram = 0x80033A60, value = 0x00000000 },
+    { func = "func_8003FC00", vram = 0x8003FC38, value = 0x00000000 },
+    { func = "func_8003FC00", vram = 0x8003FC5C, value = 0x00000000 },
+    { func = "func_8003FC80", vram = 0x8003FCB8, value = 0x00000000 },
+    { func = "func_8003FC80", vram = 0x8003FCDC, value = 0x00000000 },
+]
+
+# The game performs a private raw-SI probe for unusual controller types after
+# osContInit. ModernRuntime exposes a normal controller through the public API,
+# so report that same result without touching console SI registers.
+[[patches.hook]]
+func = "func_80031210"
+text = "ctx->r2 = 0; return;"
+
+# This function adjusts $ra in two JAL delay slots to select exactly one EDL
+# decoder. A direct C call returns to the next generated statement instead, so
+# reproduce the original dispatch in a small host shim.
+[[patches.hook]]
+func = "func_80013A18"
+text = "dispatch_edl_decode(rdram, ctx); return;"
+
+# This initializer walks a table of absolute labels with `jr $v0`. The table is
+# advanced across loop iterations, so N64Recomp cannot recognize it as an
+# indexed jump table. Preserve both original targets inline and rejoin their
+# shared loop tail instead of treating the labels as function pointers.
+[[patches.hook]]
+before_vram = 0x80006FF0
+func = "func_80006F70"
+text = "if (ctx->r2 == S32(0x80006FF8) || ctx->r2 == S32(0x80007018)) { ctx->r1 = S32(0x801C << 16); ctx->r1 = ADD32(ctx->r1, ctx->r3); MEM_W(0x22C4, ctx->r1) = (ctx->r2 == S32(0x80006FF8)) ? 0 : ctx->r10; ctx->r1 = S32(0x801C << 16); ctx->r1 = ADD32(ctx->r1, ctx->r3); MEM_W(0x22D0, ctx->r1) = (ctx->r2 == S32(0x80006FF8)) ? ctx->r11 : ctx->r10; ctx->r3 = ADD32(ctx->r3, 0x24); goto L_80007034; }"
+
+# Host graphics completion can reach the scheduler before the startup threads
+# finish their black-screen requests. Do not consume the one-time unblack flag
+# on the initial task that has no framebuffer; the first real swap will use it.
+[[patches.hook]]
+before_vram = 0x80036ED0
+func = "func_80036E80"
+text = "if (MEM_W(0xC, ctx->r16) == 0) { goto L_80036EF0; }"
+
+# ModernRuntime's parallel host threads can issue these startup black requests
+# after the first graphics completion. Re-arm the game's own first-frame flag
+# so the next real framebuffer swap performs the matching osViBlack(0).
+[[patches.hook]]
+before_vram = 0x80001C8C
+func = "func_80001C74"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x80001FD8
+func = "runtime_event_thread_entry"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x800020CC
+func = "child_runtime_thread_entry"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x80002A7C
+func = "func_800029E4"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x80002DDC
+func = "func_800029E4"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x80002EC0
+func = "func_80002EB0"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x80002EFC
+func = "func_80002EEC"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+[[patches.hook]]
+before_vram = 0x80036920
+func = "platform_event_setup_like"
+text = "MEM_W(0x140C, S32(0x8009 << 16)) = 1;"
+
+# N64ModernRuntime currently exposes rumble but no Controller Pak filesystem.
+# Keep the game's asynchronous save state machine and service only its PFS
+# commands through persistent host storage.
+[[patches.hook]]
+before_vram = 0x8002E044
+func = "first_frame_tick"
+text = "dispatch_debug_level_command(rdram, ctx); if (dispatch_controller_pak_command(rdram, ctx)) { goto L_8002E314; }"
+
+# The original detector treats memory and rumble as mutually exclusive because
+# only one physical accessory fits in an N64 controller. The PC bridge supports
+# both, so expose the combined virtual accessory immediately.
+[[patches.hook]]
+func = "func_8002B25C"
+text = "activate_virtual_controller_accessory(rdram, ctx); return;"
+
+# These loops wait for a counter advanced by the VI interrupt thread. Yield at
+# each back-edge so ModernRuntime can deliver that asynchronous interrupt.
+[[patches.hook]]
+before_vram = 0x80002344
+func = "func_80002320"
+text = "yield_self(rdram);"
+
+[[patches.hook]]
+before_vram = 0x80002378
+func = "func_80002320"
+text = "yield_self(rdram);"
+
+[[patches.hook]]
+before_vram = 0x80001CC8
+func = "func_80001CA0"
+text = "yield_self(rdram);"
+
+[[patches.hook]]
+before_vram = 0x80001DE4
+func = "func_80001CA0"
+text = "yield_self(rdram);"
+
+# Scene changes wait for the runtime-state owner to clear 0x80082B40. The N64
+# scheduler can preempt this tight loop; ModernRuntime scheduling is cooperative.
+[[patches.hook]]
+before_vram = 0x80002E98
+func = "func_80002E80"
+text = "yield_self(rdram);"
+
+# Gameplay scene setup waits for both alternating frame-workspace owners to
+# release their slots. These are preemptible spins on N64 and must cooperate
+# with ModernRuntime's host-thread scheduler.
+[[patches.hook]]
+before_vram = 0x80001A24
+func = "func_80001A0C"
+text = "yield_self(rdram);"
+
+[[patches.hook]]
+before_vram = 0x80001A4C
+func = "func_80001A0C"
+text = "yield_self(rdram);"
+
+[[patches.hook]]
+before_vram = 0x80001A70
+func = "func_80001A0C"
+text = "yield_self(rdram);"
+
+[[patches.hook]]
+before_vram = 0x80001A98
+func = "func_80001A0C"
+text = "yield_self(rdram);"

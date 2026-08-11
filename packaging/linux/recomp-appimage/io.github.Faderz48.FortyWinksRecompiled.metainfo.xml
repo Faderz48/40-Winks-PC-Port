@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.Faderz48.FortyWinksRecompiled</id>
+  <name>40 Winks Recompiled</name>
+  <summary>Native Linux recompilation of 40 Winks</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <url type="homepage">https://github.com/Faderz48/40-Winks-PC-Port</url>
+  <developer_name>Faderz48</developer_name>
+  <description>
+    <p>
+      A native Linux runtime produced by statically recompiling the original
+      40 Winks Nintendo 64 program and rendering it through RT64.
+    </p>
+    <p>
+      The AppImage does not contain game ROM data. Users must provide their own
+      compatible local ROM when launching it.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.Faderz48.FortyWinksRecompiled.desktop</launchable>
+  <categories>
+    <category>Game</category>
+    <category>Emulator</category>
+  </categories>
+  <provides>
+    <binary>forty-winks-recomp</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-07-18">
+      <description>
+        <p>First native build with menus, cutscenes, controller input, and early-game traversal.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

@@ -1,0 +1,466 @@
+diff --git a/src/hle/rt64_application.cpp b/src/hle/rt64_application.cpp
+index 785de27..481e842 100644
+--- a/src/hle/rt64_application.cpp
++++ b/src/hle/rt64_application.cpp
+@@ -407,6 +407,10 @@ namespace RT64 {
+         workloadExt.textureCache = textureCache.get();
+         workloadExt.shaderLibrary = shaderLibrary.get();
+         workloadExt.createdGraphicsAPI = chosenGraphicsAPI;
++        workloadExt.forceAspectCorrectTransforms =
++            appConfig.forceAspectCorrectTransforms;
++        workloadExt.preserveRectangleAspect =
++            appConfig.preserveRectangleAspect;
+ #   if RT_ENABLED
+         workloadExt.rtShaderCache = rtShaderCache.get();
+         workloadExt.blueNoiseTexture = blueNoiseTexture.texture.get();
+@@ -422,6 +426,10 @@ namespace RT64 {
+         presentExt.sharedResources = sharedQueueResources.get();
+         presentExt.shaderLibrary = shaderLibrary.get();
+         presentExt.createdGraphicsAPI = chosenGraphicsAPI;
++        presentExt.stretchFramebuffersToWindow =
++            appConfig.stretchFramebuffersToWindow;
++        presentExt.cpuFramebufferAspectRatio =
++            appConfig.cpuFramebufferAspectRatio;
+         presentQueue->setup(presentExt);
+ 
+         // Configure the state to use all the created components.
+diff --git a/src/hle/rt64_application.h b/src/hle/rt64_application.h
+index 6c83fe0..d272e65 100644
+--- a/src/hle/rt64_application.h
++++ b/src/hle/rt64_application.h
+@@ -4,6 +4,7 @@
+ 
+ #pragma once
+ 
++#include <functional>
+ #include <sstream>
+ #include <filesystem>
+ 
+@@ -40,6 +41,11 @@ namespace RT64 {
+         std::filesystem::path dataPath;
+         bool detectDataPath = true;
+         bool useConfigurationFile = true;
++        bool forceAspectCorrectTransforms = false;
++        bool preserveRectangleAspect = false;
++        float cpuFramebufferAspectRatio = 0.0f;
++        std::function<bool()> stretchFramebuffersToWindow;
++        std::function<void()> drawUserInterface;
+     };
+ 
+     struct Application : public ApplicationWindow::Listener {
+diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
+index 08f83e5..cd0f777 100755
+--- a/src/hle/rt64_application_window.cpp
++++ b/src/hle/rt64_application_window.cpp
+@@ -33,6 +33,17 @@ namespace RT64 {
+     }
+ 
+     ApplicationWindow::~ApplicationWindow() {
++        if (sdlEventFilterInstalled) {
++            SDL_EventFilter currentFilter = nullptr;
++            void *currentUserdata = nullptr;
++            if (SDL_GetEventFilter(&currentFilter, &currentUserdata) &&
++                    (currentFilter == &ApplicationWindow::sdlEventFilter) &&
++                    (currentUserdata == this)) {
++                SDL_SetEventFilter(sdlEventFilterStored, sdlEventFilterUserdata);
++            }
++            sdlEventFilterInstalled = false;
++        }
++
+         if (HookedApplicationWindow == this) {
+             HookedApplicationWindow = nullptr;
+         }
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+index 3227ab1..09dec74 100644
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -115,6 +115,7 @@ namespace RT64 {
+         }
+ 
+         RenderTarget *colorTarget = nullptr;
++        bool cpuFramebuffer = false;
+         int32_t framesToPresent = 1;
+         bool lockedWorkloadMutex = false;
+         InterpolatedFrameCounters &frameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
+@@ -217,6 +218,7 @@ namespace RT64 {
+                 }
+             }
+             else {
++                cpuFramebuffer = true;
+                 uint32_t fbAddress = present.screenVI.fbAddress();
+ 
+                 // Use a scratch framebuffer to upload the RAM to the render target.
+@@ -323,6 +325,12 @@ namespace RT64 {
+                     renderParams.filtering = filtering;
+                     renderParams.vi = &present.screenVI;
+                     renderParams.removeBlackBorders = removeBlackBorders;
++                    renderParams.stretchToWindow =
++                        ext.stretchFramebuffersToWindow &&
++                        ext.stretchFramebuffersToWindow();
++                    renderParams.aspectRatioOverride = cpuFramebuffer
++                        ? ext.cpuFramebufferAspectRatio
++                        : 0.0f;
+ 
+                     const bool useDownsampling = (colorTarget->downsampleMultiplier > 1);
+                     if (useDownsampling) {
+diff --git a/src/hle/rt64_present_queue.h b/src/hle/rt64_present_queue.h
+index e08b02c..228680f 100644
+--- a/src/hle/rt64_present_queue.h
++++ b/src/hle/rt64_present_queue.h
+@@ -4,6 +4,8 @@
+ 
+ #pragma once
+ 
++#include <functional>
++
+ #include "common/rt64_profiling_timer.h"
+ #include "gui/rt64_inspector.h"
+ #include "render/rt64_vi_renderer.h"
+@@ -27,6 +29,8 @@ namespace RT64 {
+             SharedQueueResources *sharedResources = nullptr;
+             const ShaderLibrary *shaderLibrary = nullptr;
+             UserConfiguration::GraphicsAPI createdGraphicsAPI = UserConfiguration::GraphicsAPI::OptionCount;
++            std::function<bool()> stretchFramebuffersToWindow;
++            float cpuFramebufferAspectRatio = 0.0f;
+         };
+ 
+         External ext;
+@@ -73,4 +77,4 @@ namespace RT64 {
+         void threadAdvanceBarrier();
+         void threadLoop();
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_state.cpp b/src/hle/rt64_state.cpp
+index d249a97..08d8b34 100644
+--- a/src/hle/rt64_state.cpp
++++ b/src/hle/rt64_state.cpp
+@@ -1977,6 +1977,13 @@ namespace RT64 {
+         InspectorMode inspectorMode = InspectorMode::None;
+         inspector->newFrame(ext.framebufferGraphicsWorker);
+ 
++        if (ext.app->appConfig.drawUserInterface) {
++            ext.app->appConfig.drawUserInterface();
++            inspector->endFrame();
++            ext.presentQueue->inspectorMutex.unlock();
++            return;
++        }
++
+         if (ext.app->freeCamClearQueued) {
+             debuggerInspector.camera.enabled = false;
+             ext.app->freeCamClearQueued = false;
+@@ -2774,4 +2781,4 @@ namespace RT64 {
+             break;
+         }
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
+index 5a331aa..e5db87f 100644
+--- a/src/hle/rt64_workload_queue.cpp
++++ b/src/hle/rt64_workload_queue.cpp
+@@ -314,6 +314,8 @@ namespace RT64 {
+             projParams.curFrameWeight = curFrameWeight;
+             projParams.prevFrameWeight = prevFrameWeight;
+             projParams.aspectRatioScale = workloadConfig.aspectRatioScale;
++            projParams.forceAspectCorrectTransforms =
++                ext.forceAspectCorrectTransforms && aspectRatioAdjustment;
+             projectionProcessor.process(projParams);
+             projectionProcessor.upload(projParams);
+             uploadProjections = true;
+@@ -638,6 +640,10 @@ namespace RT64 {
+                     drawParams.ubershadersOnly = ubershadersOnly;
+                     drawParams.postBlendNoise = workloadConfig.postBlendNoise;
+                     drawParams.postBlendNoiseNegative = workloadConfig.postBlendNoiseNegative;
++                    drawParams.forceAspectCorrectTransforms =
++                        ext.forceAspectCorrectTransforms && aspectRatioAdjustment;
++                    drawParams.preserveRectangleAspect =
++                        ext.preserveRectangleAspect && aspectRatioAdjustment;
+                     drawParams.maxGameCall = std::min(gameCallCountMax - gameCallCursor, fbPair.gameCallCount);
+                     framebufferRenderer->addFramebuffer(drawParams);
+                 }
+@@ -1221,4 +1227,4 @@ namespace RT64 {
+             }
+         }
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/hle/rt64_workload_queue.h b/src/hle/rt64_workload_queue.h
+index bde2f03..d09bd32 100644
+--- a/src/hle/rt64_workload_queue.h
++++ b/src/hle/rt64_workload_queue.h
+@@ -41,6 +41,8 @@ namespace RT64 {
+             TextureCache *textureCache = nullptr;
+             const ShaderLibrary *shaderLibrary = nullptr;
+             UserConfiguration::GraphicsAPI createdGraphicsAPI = UserConfiguration::GraphicsAPI::OptionCount;
++            bool forceAspectCorrectTransforms = false;
++            bool preserveRectangleAspect = false;
+ #       if RT_ENABLED
+             const RenderTexture *blueNoiseTexture = nullptr;
+             RaytracingShaderCache *rtShaderCache = nullptr;
+@@ -123,4 +125,4 @@ namespace RT64 {
+         void renderThreadLoop();
+         void idleThreadLoop();
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_framebuffer_renderer.cpp b/src/render/rt64_framebuffer_renderer.cpp
+index 9fae0d4..e92e0a2 100644
+--- a/src/render/rt64_framebuffer_renderer.cpp
++++ b/src/render/rt64_framebuffer_renderer.cpp
+@@ -1490,7 +1490,9 @@ namespace RT64 {
+                 FixedRect intersectionRect = proj.scissorRect.intersection(viewport.rect(viewportClipRatios));
+                 bool coversWholeWidth = !intersectionRect.isEmpty() && (intersectionRect.ulx <= fbPair.scissorRect.ulx) && (intersectionRect.lrx >= fbPair.scissorRect.lrx);
+                 bool horizontalRatio = !intersectionRect.isEmpty() && (intersectionRect.width(true, true) > intersectionRect.height(true, true));
+-                bool useWideViewport = (viewportOrigin == G_EX_ORIGIN_NONE) && coversWholeWidth && horizontalRatio;
++                bool useWideViewport = p.forceAspectCorrectTransforms ||
++                    ((viewportOrigin == G_EX_ORIGIN_NONE) &&
++                    coversWholeWidth && horizontalRatio);
+                 if (useWideViewport) {
+                     projInvRatioScale = 1.0f;
+                 }
+@@ -1645,7 +1647,12 @@ namespace RT64 {
+                             // The call's scissor spans the whole width of the framebuffer pair scissor. The rect must not be using extended origins.
+                             const bool regularOrigins = (call.callDesc.rectLeftOrigin == G_EX_ORIGIN_NONE) && (call.callDesc.rectRightOrigin == G_EX_ORIGIN_NONE);
+                             const bool coversScissorWidth = regularOrigins && (call.callDesc.rect.ulx <= fbPair.scissorRect.ulx) && (call.callDesc.rect.lrx >= fbPair.scissorRect.lrx);
+-                            if ((tileCopiesUsed || coversScissorWidth || call.callDesc.rectAspect == G_EX_ASPECT_STRETCH) && (call.callDesc.rectAspect != G_EX_ASPECT_ADJUST)) {
++                            const bool adjustRectangleAspect =
++                                p.preserveRectangleAspect ||
++                                (call.callDesc.rectAspect == G_EX_ASPECT_ADJUST);
++                            if ((tileCopiesUsed || coversScissorWidth ||
++                                call.callDesc.rectAspect == G_EX_ASPECT_STRETCH) &&
++                                !adjustRectangleAspect) {
+                                 invRatioScale = 1.0f;
+                             }
+                             else {
+@@ -1917,4 +1924,4 @@ namespace RT64 {
+         unsigned int im3dVertexCount;
+     };
+ };
+-*/
+\ No newline at end of file
++*/
+diff --git a/src/render/rt64_framebuffer_renderer.h b/src/render/rt64_framebuffer_renderer.h
+index 3add9c3..d9201f6 100644
+--- a/src/render/rt64_framebuffer_renderer.h
++++ b/src/render/rt64_framebuffer_renderer.h
+@@ -146,6 +146,8 @@ namespace RT64 {
+             bool ubershadersOnly;
+             bool postBlendNoise;
+             bool postBlendNoiseNegative;
++            bool forceAspectCorrectTransforms;
++            bool preserveRectangleAspect;
+             uint32_t maxGameCall;
+         };
+ 
+@@ -179,4 +181,4 @@ namespace RT64 {
+         void setRaytracingConfig(const RaytracingConfiguration &rtConfig, bool resolutionChanged);
+ #   endif
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_projection_processor.cpp b/src/render/rt64_projection_processor.cpp
+index e842dcc..d44cd9f 100644
+--- a/src/render/rt64_projection_processor.cpp
++++ b/src/render/rt64_projection_processor.cpp
+@@ -8,11 +8,14 @@
+ #include "hle/rt64_workload_queue.h"
+ 
+ namespace RT64 {
+-    inline void adjustProjectionMatrix(interop::float4x4 &matrix, const float aspectRatioScale) {
+-        matrix[0][0] *= aspectRatioScale;
+-        matrix[1][0] *= aspectRatioScale;
+-        matrix[2][0] *= aspectRatioScale;
+-        matrix[3][0] *= aspectRatioScale;
++    inline void adjustProjectionMatrix(
++            interop::float4x4 &matrix,
++            const float horizontalScale,
++            const float verticalScale) {
++        for (uint32_t row = 0; row < 4; row++) {
++            matrix[row][0] *= horizontalScale;
++            matrix[row][1] *= verticalScale;
++        }
+     }
+     
+     // ProjectionProcessor
+@@ -82,8 +85,10 @@ namespace RT64 {
+ 
+             const uint32_t curProjGroupIndex = workload.drawData.viewProjTransformGroups[proj.transformsIndex];
+             const TransformGroup &curProjGroup = workload.drawData.transformGroups[curProjGroupIndex];
+-            bool adjustAspectRatio = (curProjGroup.aspectMode == G_EX_ASPECT_ADJUST);
+-            if (curProjGroup.aspectMode == G_EX_ASPECT_AUTO) {
++            bool adjustAspectRatio = p.forceAspectCorrectTransforms ||
++                (curProjGroup.aspectMode == G_EX_ASPECT_ADJUST);
++            if (!p.forceAspectCorrectTransforms &&
++                curProjGroup.aspectMode == G_EX_ASPECT_AUTO) {
+                 FixedRect intersectionRect = proj.scissorRect;
+                 if (proj.usesViewport()) {
+                     const interop::RSPViewport &viewport = drawData.rspViewports[proj.transformsIndex];
+@@ -98,7 +103,40 @@ namespace RT64 {
+                 }
+             }
+  
+-            float projRatioScale = adjustAspectRatio ? (1.0f / p.aspectRatioScale) : 1.0f;
++            bool horizontalSplitView = false;
++            if (p.forceAspectCorrectTransforms &&
++                adjustAspectRatio &&
++                proj.type == Projection::Type::Perspective &&
++                proj.usesViewport()) {
++                const interop::RSPViewport &viewport =
++                    drawData.rspViewports[proj.transformsIndex];
++                const int16_t *viewportClipRatios =
++                    &drawData.viewportClipRatios[proj.transformsIndex * 4];
++                const FixedRect viewRect = proj.scissorRect.intersection(
++                    viewport.rect(viewportClipRatios));
++                if (!viewRect.isEmpty() && !fbPair.scissorRect.isEmpty()) {
++                    const float widthRatio =
++                        float(viewRect.width(true, true)) /
++                        float(fbPair.scissorRect.width(true, true));
++                    const float heightRatio =
++                        float(viewRect.height(true, true)) /
++                        float(fbPair.scissorRect.height(true, true));
++                    horizontalSplitView =
++                        widthRatio >= 0.9f &&
++                        heightRatio >= 0.35f &&
++                        heightRatio <= 0.6f;
++                }
++            }
++
++            // A top/bottom split is already much wider than a normal view. Keep
++            // its original horizontal coverage and crop vertically instead of
++            // exposing room geometry that was never authored for the camera.
++            const float horizontalScale = !adjustAspectRatio
++                ? 1.0f
++                : (horizontalSplitView ? 1.0f : (1.0f / p.aspectRatioScale));
++            const float verticalScale = horizontalSplitView
++                ? p.aspectRatioScale
++                : 1.0f;
+             interop::float4x4 &viewMatrix = drawData.modViewTransforms[proj.transformsIndex];
+             interop::float4x4 &projMatrix = drawData.modProjTransforms[proj.transformsIndex];
+             interop::float4x4 &viewProjMatrix = drawData.modViewProjTransforms[proj.transformsIndex];
+@@ -112,7 +150,8 @@ namespace RT64 {
+                 projMatrix = workload.debuggerCamera.projMatrix;
+             }
+ 
+-            adjustProjectionMatrix(projMatrix, projRatioScale);
++            adjustProjectionMatrix(
++                projMatrix, horizontalScale, verticalScale);
+ 
+             interop::float4x4 &prevViewTransform = drawData.prevViewTransforms[proj.transformsIndex];
+             interop::float4x4 &prevProjTransform = drawData.prevProjTransforms[proj.transformsIndex];
+@@ -120,7 +159,8 @@ namespace RT64 {
+                 const interop::float4x4 curViewTransform = viewMatrix;
+                 const interop::float4x4 curProjTransform = projMatrix;
+                 interop::float4x4 adjustedPrevProj = *prevProjMatrix;
+-                adjustProjectionMatrix(adjustedPrevProj, projRatioScale);
++                adjustProjectionMatrix(
++                    adjustedPrevProj, horizontalScale, verticalScale);
+                 viewMatrix = rigidBody->lerp(p.curFrameWeight, *prevViewMatrix, curViewTransform, true);
+                 prevViewTransform = rigidBody->lerp(p.prevFrameWeight, *prevViewMatrix, curViewTransform, true);
+ 
+@@ -160,4 +200,4 @@ namespace RT64 {
+ 
+         bufferUploader->submit(p.worker, uploads);
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_projection_processor.h b/src/render/rt64_projection_processor.h
+index 5bc3a2a..bd3cf2e 100644
+--- a/src/render/rt64_projection_processor.h
++++ b/src/render/rt64_projection_processor.h
+@@ -21,6 +21,7 @@ namespace RT64 {
+             float curFrameWeight = 1.0f;
+             float prevFrameWeight = 0.0f;
+             float aspectRatioScale = 1.0f;
++            bool forceAspectCorrectTransforms = false;
+         };
+ 
+         ProjectionProcessor();
+@@ -30,4 +31,4 @@ namespace RT64 {
+         void processScene(const ProcessParams &p, const GameScene &scene, size_t sceneIndex);
+         void upload(const ProcessParams &p);
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_vi_renderer.cpp b/src/render/rt64_vi_renderer.cpp
+index b4ff4e9..6bc4976 100644
+--- a/src/render/rt64_vi_renderer.cpp
++++ b/src/render/rt64_vi_renderer.cpp
+@@ -69,7 +69,42 @@ namespace RT64 {
+ 
+         RenderViewport viewport;
+         RenderRect scissor;
+-        getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, viewport, scissor);
++        if (p.stretchToWindow) {
++            viewport = RenderViewport(
++                0.0f,
++                0.0f,
++                float(p.swapChain->getWidth()),
++                float(p.swapChain->getHeight()));
++            scissor = RenderRect(
++                0,
++                0,
++                p.swapChain->getWidth(),
++                p.swapChain->getHeight());
++        }
++        else if (p.aspectRatioOverride > 0.0f) {
++            const float windowWidth = float(p.swapChain->getWidth());
++            const float windowHeight = float(p.swapChain->getHeight());
++            float viewportWidth = windowWidth;
++            float viewportHeight = windowWidth / p.aspectRatioOverride;
++            if (viewportHeight > windowHeight) {
++                viewportHeight = windowHeight;
++                viewportWidth = windowHeight * p.aspectRatioOverride;
++            }
++
++            const float viewportX = (windowWidth - viewportWidth) * 0.5f;
++            const float viewportY = (windowHeight - viewportHeight) * 0.5f;
++            viewport = RenderViewport(
++                viewportX, viewportY, viewportWidth, viewportHeight);
++            scissor = RenderRect(
++                lround(viewportX),
++                lround(viewportY),
++                lround(viewportX + viewportWidth),
++                lround(viewportY + viewportHeight));
++        }
++        else {
++            getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale,
++                p.downsamplingScale, p.removeBlackBorders, viewport, scissor);
++        }
+         p.commandList->setViewports(viewport);
+         p.commandList->setScissors(scissor);
+ 
+@@ -122,4 +157,4 @@ namespace RT64 {
+         viewport = RenderViewport(topLeftViewport.x, topLeftViewport.y, bottomRightViewport.x - topLeftViewport.x, bottomRightViewport.y - topLeftViewport.y);
+         scissor = RenderRect(lround(topLeftScissor.x), lround(topLeftScissor.y), lround(bottomRightScissor.x), lround(bottomRightScissor.y));
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/render/rt64_vi_renderer.h b/src/render/rt64_vi_renderer.h
+index 8a3782a..3c47cd1 100644
+--- a/src/render/rt64_vi_renderer.h
++++ b/src/render/rt64_vi_renderer.h
+@@ -29,6 +29,8 @@ namespace RT64 {
+             UserConfiguration::Filtering filtering = UserConfiguration::Filtering::Linear;
+             const VI *vi = nullptr;
+             bool removeBlackBorders = false;
++            bool stretchToWindow = false;
++            float aspectRatioOverride = 0.0f;
+         };
+ 
+         VIRenderer();
+@@ -36,4 +38,4 @@ namespace RT64 {
+         void render(const RenderParams &p);
+         static void getViewportAndScissor(const RenderSwapChain *swapChain, const VI &vi, hlslpp::float2 resolutionScale, uint32_t downsamplingScale, bool removeBlackBorders, RenderViewport &viewport, RenderRect &scissor);
+     };
+-};
+\ No newline at end of file
++};

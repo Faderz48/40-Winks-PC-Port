@@ -1,0 +1,46 @@
+rom_offset,vram,name,confidence,notes
+0x00001000,0x80000400,entry_start,known,ROM header entry point
+0x000025B0,0x800019B0,boot_create_main_thread,guessed,Called by entry after RAM clear and stack setup
+0x00002DD4,0x800021D4,main_thread_entry,guessed,Passed as osCreateThread entry argument
+0x00002C10,0x80002010,child_runtime_thread_entry,guessed,Created by main_thread_entry as thread id 2
+0x00002A1C,0x80001E1C,runtime_event_thread_entry,guessed,Created by child_runtime_thread_entry as thread id 4
+0x0003BAF0,0x8003AEF0,osInitialize,guessed,Libultra-style boot setup call
+0x0003BA50,0x8003AE50,osGetMemSize,guessed,Child thread compares return value with 0x00800000
+0x00031FF0,0x800313F0,main_thread_init_call,guessed,Called before creating child runtime thread
+0x00036FF0,0x800363F0,osCreateMesgQueue_like,guessed,"Called with queue, message buffer, and count"
+0x00037470,0x80036870,platform_event_setup_like,guessed,Used by child_runtime_thread_entry before VI/audio setup
+0x000376A0,0x80036AA0,platform_message_call_like,guessed,Returns value stored during child runtime setup
+0x00038020,0x80037420,osCreateThread,guessed,"Arguments match osCreateThread(thread,id,entry,arg,stack,priority)"
+0x00038110,0x80037510,osSetThreadPri_or_join,guessed,Called after starting child thread with original thread pointer
+0x000381E0,0x800375E0,osStartThread,guessed,Called with thread pointer after create
+0x000387C0,0x80037BC0,__osProbeTLB,known,Matches the internal libreultra TLB probe routine
+0x0002E858,0x8002DC58,input_state_reset_like,guessed,Executed directly on the type-4 path before first frame tick
+0x0002E928,0x8002DD28,first_frame_tick,guessed,Frame dispatcher probe reaches all 13 known state targets
+0x0002EC90,0x8002E090,frame_dispatch_state_1,guessed,Jump-table target from first frame tick
+0x0002ECBC,0x8002E0BC,frame_dispatch_state_2,guessed,Jump-table target from first frame tick
+0x0002ECE8,0x8002E0E8,frame_dispatch_state_3,guessed,Jump-table target from first frame tick
+0x0002ED10,0x8002E110,frame_dispatch_state_4,guessed,Jump-table target from first frame tick
+0x0002ED30,0x8002E130,frame_dispatch_state_5,guessed,Jump-table target from first frame tick
+0x0002ED58,0x8002E158,frame_dispatch_state_6,guessed,Jump-table target from first frame tick
+0x0002ED94,0x8002E194,frame_dispatch_state_7,guessed,Jump-table target from first frame tick
+0x0002EDBC,0x8002E1BC,frame_dispatch_state_8,guessed,Jump-table target from first frame tick
+0x0002EDD4,0x8002E1D4,frame_dispatch_state_9,guessed,Jump-table target from first frame tick
+0x0002EE1C,0x8002E21C,frame_dispatch_state_10,guessed,Jump-table target from first frame tick
+0x0002EE70,0x8002E270,frame_dispatch_state_11,guessed,Jump-table target from first frame tick
+0x0002EEB8,0x8002E2B8,frame_dispatch_state_12,guessed,Jump-table target from first frame tick
+0x0002EEE0,0x8002E2E0,frame_dispatch_state_13,guessed,Scheduler/message wait target from first frame tick
+0x00038CA0,0x800380A0,vi_config_like,guessed,Records VI/video setup argument during first frame path
+0x00039364,0x80038764,frame_gfx_new_like,guessed,Frame dispatch graphics helper
+0x000395B0,0x800389B0,frame_gfx_transfer_like,guessed,Frame dispatch graphics helper
+0x000399E0,0x80038DE0,frame_gfx_copy_like,guessed,Frame dispatch graphics helper
+0x00039C00,0x80039000,frame_gfx_copy_stride_like,guessed,Frame dispatch graphics helper
+0x0003A040,0x80039440,frame_gfx_read_like,guessed,Frame dispatch graphics helper
+0x0003A1E0,0x800395E0,frame_gfx_read_stride_like,guessed,Frame dispatch graphics helper
+0x0003A3A0,0x800397A0,frame_gfx_read_indexed_like,guessed,Frame dispatch graphics helper
+0x0003A4B0,0x800398B0,frame_gfx_read_bulk_like,guessed,Frame dispatch graphics helper
+0x0003A5B0,0x800399B0,frame_gfx_bind_like,guessed,Frame dispatch graphics helper
+0x0003A880,0x80039C80,frame_gfx_release_like,guessed,Frame dispatch graphics helper
+0x000391C0,0x800385C0,vi_or_scheduler_call_like,guessed,Called with a0=1 during runtime setup
+0x0005BD74,0x8005B174,display_list_begin_like,guessed,High-call-count helper seen in scene/menu code
+0x0005BEBC,0x8005B2BC,display_list_submit_like,guessed,High-call-count helper seen in scene/menu code
+0x0005EDC0,0x8005E1C0,effect_slot_scan_like,guessed,Executed directly on the type-4 path

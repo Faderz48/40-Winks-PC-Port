@@ -1,0 +1,72 @@
+vram,name,notes
+0x8003B7A0,__osExceptionPreamble,Hardware exception vector entry detected from the ROM jump pattern
+0x8003B7B0,__osException,Hardware exception handler targeted by __osExceptionPreamble
+0x8003BD2C,send_mesg,Exception message helper matched to libreultra exceptasm
+0x8003BE1C,__osEnqueueAndYield,Thread context-save helper matched to libreultra exceptasm
+0x8003BF24,__osEnqueueThread,Thread queue helper matched to libreultra exceptasm
+0x8003BF6C,__osPopThread,Thread queue pop helper matched to libreultra exceptasm
+0x8003BF7C,__osDispatchThread,Thread context-restore helper matched to libreultra exceptasm
+0x8003C110,__osDisableInt,Interrupt-disable helper matched to the ROM and reimplemented by N64ModernRuntime
+0x8003C180,__osRestoreInt,Interrupt-restore helper matched to libreultra and reimplemented by N64ModernRuntime
+0x8003C1A0,osSetIntMask,CPU and RCP interrupt-mask setter matched to libreultra and reimplemented by N64ModernRuntime
+0x8003C240,__osSetGlobalIntMask,Global interrupt-mask updater matched to libreultra
+0x8003C280,__osResetGlobalIntMask,Global interrupt-mask clearer matched to libreultra
+0x80040D50,__osGetCause,COP0 Cause accessor matched to libreultra
+0x80040D60,osGetCount,COP0 Count accessor matched to libreultra and reimplemented by N64ModernRuntime
+0x80040D70,__osGetSR,COP0 Status accessor matched to libreultra
+0x80040D80,__osSetCompare,COP0 Compare accessor matched to libreultra
+0x80040D90,__osSetFpcCsr,FPU control/status accessor matched to libreultra and reimplemented by N64ModernRuntime
+0x80040DA0,__osSetSR,COP0 Status setter matched to libreultra
+0x80040DB0,osSpTaskLoad,RSP task loader matched to its task copy and IMEM DMA sequence
+0x80040FBC,osSpTaskStartGo,RSP task start matched to its busy wait and SP status command
+0x80040FF0,osSpTaskYield,RSP yield request matched to SP_SET_YIELD
+0x80041010,osSpTaskYielded,RSP yielded-state query matched to SP status and task flag handling
+0x80034010,osVirtualToPhysical,Public virtual-address wrapper matched to libreultra and reimplemented by N64ModernRuntime
+0x800412D0,osMapTLBRdb,Reserved-debug TLB mapper matched to libreultra
+0x80041330,osUnmapTLBAll,Full TLB reset helper matched to libreultra and stubbed by N64ModernRuntime
+0x800313F0,osCreatePiManager,PI manager setup matched to libreultra and replaced by ModernRuntime direct DMA
+0x80031580,osEPiRawStartDma,Extended PI DMA entry matched to its five-argument hardware setup path
+0x80031770,__osDevMgrMain,PI device-manager worker intentionally suppressed with host-managed direct DMA
+0x80031C20,osPiStartDma,Seven-argument PI DMA queue API matched to libreultra and reimplemented by N64ModernRuntime
+0x80031CD0,osAiGetLength,AI DMA byte-count accessor matched to AI_LEN_REG and reimplemented by N64ModernRuntime
+0x80031CE0,osAiSetFrequency,AI DAC and bit-rate setup matched to libreultra and reimplemented by N64ModernRuntime
+0x80031E00,osAiSetNextBuffer,AI buffer submission matched to libreultra and reimplemented by N64ModernRuntime
+0x80033A80,osContStartQuery,Controller status-query kickoff matched to libreultra SI command sequencing
+0x80033B00,osContGetQuery,Controller status unpacker matched to its __osContGetInitData wrapper
+0x80033B20,osContStartReadData,Controller read kickoff matched by its SI access and last-command sequence
+0x80033BA8,osContGetReadData,Controller data unpacker matched by its OSContPad six-byte output stride
+0x80033D00,osContInit,Controller initialization matched by its timed SI query sequence and reimplemented by N64ModernRuntime
+0x800363F0,osCreateMesgQueue,Message-queue initializer matched to libreultra and reimplemented by N64ModernRuntime
+0x80036420,osSendMesg,Blocking send path matched by its full-queue wait and reimplemented by N64ModernRuntime
+0x80036560,osRecvMesg,Blocking receive path matched by its empty-queue wait and reimplemented by N64ModernRuntime
+0x80036690,osJamMesg,Front-of-queue send path matched to libreultra and reimplemented by N64ModernRuntime
+0x800367C0,osSetEventMesg,Event routing setter matched to libreultra and reimplemented by N64ModernRuntime
+0x800374F0,osGetThreadPri,Thread priority query matched to libreultra and reimplemented by N64ModernRuntime
+0x80037510,osSetThreadPri,Thread priority and run-queue update path matched to libreultra
+0x80037740,osYieldThread,Current-thread yield path matched to libreultra
+0x80037820,osSetTimer,Timer insertion API matched to libreultra and reimplemented by N64ModernRuntime
+0x80037914,__osTimerInterrupt,Timer-list interrupt worker matched to libreultra
+0x80037A50,__osSetTimerIntr,COP0 Compare scheduling helper matched to libreultra
+0x80037AB0,__osInsertTimer,Delta-list insertion helper matched to libreultra
+0x80037D00,osCreateViManager,VI manager setup matched to libreultra and reimplemented by N64ModernRuntime
+0x80037EA0,viMgrMain,VI manager thread matched to libreultra
+0x80038040,osViSetEvent,VI retrace event registration matched to libreultra and reimplemented by N64ModernRuntime
+0x800380A0,osViSetMode,VI mode setter matched to libreultra and reimplemented by N64ModernRuntime
+0x800380F0,osViSetSpecialFeatures,VI feature-mask updater matched to libreultra and reimplemented by N64ModernRuntime
+0x80038260,osViSwapBuffer,VI framebuffer swap request matched to libreultra and reimplemented by N64ModernRuntime
+0x800385C0,osViBlack,VI black-state setter matched to libreultra and reimplemented by N64ModernRuntime
+0x80038620,__osMotorAccess,Unified Rumble Pak start/stop path matched to its cached PIF command buffers and reimplemented by N64ModernRuntime
+0x80038764,osMotorInit,Rumble Pak probe matched to the 0xFE/0x80 bank test and reimplemented by N64ModernRuntime
+0x800411F0,osDestroyThread,Thread removal and dispatch path matched to libreultra and reimplemented by N64ModernRuntime
+0x80009044,func_80009044,Leaf allocator-initialization callback reached through an audio configuration function pointer
+0x80057E54,func_80057E54,Adjacent scene-transition callback following the return at 0x80057E50
+0x80057EF8,func_80057EF8,Indirect scene-transition callback reached after the new-game menu path
+0x80049A68,func_80049A68,Leaf gameplay-effect callback following the return at 0x80049A60
+0x80049C1C,func_80049C1C,Leaf gameplay-effect callback following the return at 0x80049C14
+0x80049D34,func_80049D34,Indirect gameplay-effect callback reached on first room entry
+0x80049D6C,func_80049D6C,Adjacent gameplay-effect callback following the return at 0x80049D64
+0x80049DA8,func_80049DA8,Adjacent gameplay-effect callback following the return at 0x80049DA0
+0x80049DEC,func_80049DEC,Adjacent gameplay-effect callback following the return at 0x80049DE4
+0x80049E50,func_80049E50,Adjacent gameplay-effect callback following the return at 0x80049E48
+0x80049ED0,func_80049ED0,Adjacent gameplay-effect callback following the return at 0x80049EC8
+0x8007E3AC,func_8007E3AC,Indirect scene-transition callback reached when leaving the first playable room

@@ -1,0 +1,51 @@
+# 40 Winks PC Port
+
+An experimental native Linux port of the Nintendo 64 version of **40 Winks**, built with [N64Recomp](https://github.com/N64Recomp/N64Recomp), [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime), and [RT64](https://github.com/rt64/rt64).
+
+The port currently reaches normal gameplay, supports menus and cutscenes, persistent Controller Pak saves, Xbox/SDL controllers, keyboard input, two-player split screen, widescreen display modes, resolution scaling, and an F1 level/debug menu.
+
+## Bring Your Own ROM
+
+This repository contains **no ROM, game assets, extracted data, disassembly, or generated recompiled game functions**. You must supply your own legally obtained, clean, big-endian USA `.z64` ROM when building and running.
+
+Supported clean ROM SHA-256:
+
+```text
+057232ef7618e25f5645df50d3cd45f08cb5a2cccb3e2fdf48faa8755c4ddb1a
+```
+
+The build reads the ROM locally to generate the machine-translated CPU sources. Those generated files remain ignored by Git. At runtime, the application asks for the ROM and reads the original assets directly from it; it does not copy the ROM into the AppImage.
+
+## Build And Run
+
+```sh
+make build ROM="/path/to/40-winks.z64"
+make run ROM="/path/to/40-winks.z64"
+```
+
+Create a local AppImage:
+
+```sh
+make appimage ROM="/path/to/40-winks.z64"
+```
+
+The first build downloads pinned upstream dependencies, applies this port's patches, builds N64Recomp, verifies the ROM, and generates the required local sources. See [Building](docs/BUILDING.md) for dependencies and troubleshooting.
+
+## Controls
+
+- Controller 1 controls Player 1.
+- Keyboard controls Player 2 in co-op.
+- A second controller joins as Player 2.
+- `F1` opens and closes the debug menu.
+
+The AppImage presents a ROM file chooser when launched without `--rom` or `FORTY_WINKS_ROM`.
+
+## Repository Boundary
+
+Only independently written host/runtime code, tests, build configuration, and redistributable patches are tracked. A source audit rejects ROMs, generated game code, analysis dumps, binaries, captures, credentials, and machine-specific paths before publication.
+
+Read [Legal and redistribution](docs/LEGAL.md) before publishing builds. This project is unofficial and is not affiliated with or endorsed by Eurocom, GT Interactive, Piko Interactive, Nintendo, or any other rights holder. **40 Winks** and related game content belong to their respective owners.
+
+## License
+
+Original project code is licensed under [GPL-3.0-only](LICENSE) because it links with N64ModernRuntime. Third-party components and patches retain their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
