@@ -1,8 +1,11 @@
 # 40 Winks PC Port
+<img width="954" height="740" alt="recomp" src="https://github.com/user-attachments/assets/4b563313-6d1f-4961-9aee-b029ce4d1d0e" />
+
+
 
 An experimental native Linux port of the Nintendo 64 version of **40 Winks**, built with [N64Recomp](https://github.com/N64Recomp/N64Recomp), [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime), and [RT64](https://github.com/rt64/rt64).
 
-The port currently reaches normal gameplay, supports menus and cutscenes, persistent Controller Pak saves, Xbox/SDL controllers, keyboard input, two-player split screen, widescreen display modes, resolution scaling, and an F1 level/debug menu.
+The port currently reaches normal gameplay, supports menus and cutscenes, persistent Controller Pak saves, Xbox/SDL controllers, keyboard input, two-player split screen, widescreen display modes, resolution scaling, and an F1 level/debug menu. 2 player split-screen supported ,Xbox controllers
 
 ## Bring Your Own ROM
 
