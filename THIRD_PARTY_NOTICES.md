@@ -9,7 +9,8 @@ This repository does not vendor the dependency source trees. The bootstrap scrip
 | [RT64](https://github.com/rt64/rt64) | `f0728a2520d5aa735886240de3fee75cc805f6d6` | MIT | Graphics renderer |
 | [40 Winks N64 True Split-screen](https://github.com/Faderz48/40-Winks-N64-True-Split-screen) | `b646ce99fa4c863e9bb8eefa6ee461c1f52c0c06` | MIT | Full-width top/bottom viewport layout |
 | [AppImageKit](https://github.com/AppImage/AppImageKit) | appimagetool continuous build `5735cc5` | MIT | AppImage packaging and runtime |
+| [.NET Runtime](https://github.com/dotnet/runtime) | 8.x self-contained runtime | MIT and third-party notices | Windows first-run setup application |
 
-Copies of the applicable MIT license texts are under `LICENSES/`. N64ModernRuntime's GPL-3.0 terms are reproduced in the root `LICENSE` file.
+Copies of the applicable MIT license texts are under `LICENSES/`. N64ModernRuntime's GPL-3.0 terms are reproduced in the root `LICENSE` file. The .NET Runtime's complete current [third-party notices](https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT) remain available from its official repository.
 
 The project name is used only to identify compatibility. No game ROM, artwork, audio, video, text dump, or other game asset is licensed or distributed here.

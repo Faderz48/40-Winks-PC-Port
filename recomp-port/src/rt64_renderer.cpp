@@ -205,7 +205,13 @@ public:
         ultramodern::renderer::WindowHandle window_handle,
         bool developer_mode) {
         RT64::Application::Core core{};
+#if defined(_WIN32)
+        core.window = window_handle.window;
+        const uint32_t window_thread_id = window_handle.thread_id;
+#else
         core.window = window_handle;
+        const uint32_t window_thread_id = 0;
+#endif
         core.checkInterrupts = check_interrupts;
         core.HEADER = rom_header;
         core.RDRAM = rdram;
@@ -257,7 +263,7 @@ public:
         app->userConfig.developerMode =
             developer_mode || static_cast<bool>(app_config.drawUserInterface);
 
-        setup_result = from_rt64(app->setup(0));
+        setup_result = from_rt64(app->setup(window_thread_id));
         chosen_api = from_rt64(app->chosenGraphicsAPI);
         if (setup_result != ultramodern::renderer::SetupResult::Success) {
             std::fprintf(stderr, "RT64 failed to initialize (result %d).\n",

@@ -18,8 +18,9 @@ fi
 failed=0
 for path in "${tracked_files[@]}"; do
     case "$path" in
-        analysis/*|build/*|dist/*|work/*|pc-port/*|recomp/generated/*|recomp/baserom*|\
-        *.z64|*.n64|*.v64|*.rom|*.ips|*.AppImage|*.elf|*.o|*.a|*.so|*.dll|*.exe|\
+        analysis/*|build/*|dist/*|work/*|pc-port/*|*/bin/*|*/obj/*|\
+        recomp/generated/*|recomp/baserom*|\
+        *.z64|*.n64|*.v64|*.rom|*.ips|*.AppImage|*.elf|*.o|*.a|*.so|*.dll|*.exe|*.pdb|\
         *.png|*.jpg|*.jpeg|*.webp)
             echo "Blocked public path: $path" >&2
             failed=1

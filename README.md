@@ -3,9 +3,9 @@
 
 F1 for debug menu and graphical settings
 
-An experimental native Linux port of the Nintendo 64 version of **40 Winks**, built with [N64Recomp](https://github.com/N64Recomp/N64Recomp), [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime), and [RT64](https://github.com/rt64/rt64).
+An experimental native Linux and Windows port of the Nintendo 64 version of **40 Winks**, built with [N64Recomp](https://github.com/N64Recomp/N64Recomp), [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime), and [RT64](https://github.com/rt64/rt64).
 
-The port currently reaches normal gameplay, supports menus and cutscenes, persistent Controller Pak saves, Xbox/SDL controllers, keyboard input, two-player split screen, widescreen display modes, resolution scaling, and an F1 level/debug menu. 2 player split-screen supported ,Xbox controllers
+The port currently reaches normal gameplay and supports menus, cutscenes, persistent Controller Pak saves, Xbox/SDL controllers, keyboard input, two-player split screen, widescreen display modes, resolution scaling, and an F1 level/debug menu.
 
 ## Bring Your Own ROM
 
@@ -17,7 +17,22 @@ Supported clean ROM SHA-256:
 057232ef7618e25f5645df50d3cd45f08cb5a2cccb3e2fdf48faa8755c4ddb1a
 ```
 
-The build reads the ROM locally to generate the machine-translated CPU sources. Those generated files remain ignored by Git. At runtime, the application asks for the ROM and reads the original assets directly from it; it does not copy the ROM into the AppImage.
+The build reads the ROM locally to generate the machine-translated CPU sources. Those generated files remain ignored by Git. At runtime, the application reads the original assets directly from the selected ROM; it does not place the ROM in the playable Linux or Windows build.
+
+## Downloadable Windows Setup
+
+Download `40-Winks-PC-Port-Windows-x64.exe` from the release and run it. On first launch it:
+
+1. Asks you to select the supported ROM.
+2. Verifies the ROM before doing any build work.
+3. Asks where to put the finished playable Windows build.
+4. Offers to install the required Windows build tools when they are missing.
+5. Downloads pinned open-source dependencies and generates the native game locally.
+6. Places a launcher, the game executable, and required graphics DLLs in the chosen folder, then starts the game.
+
+The setup window shows 0-100% progress throughout generation and compilation. Later launches of `40-Winks-PC-Port.exe` from the chosen folder start the game immediately. Private source and generated CPU files stay under `%LOCALAPPDATA%\40WinksBuild`; saves, settings, and the remembered ROM location stay under `%LOCALAPPDATA%\40-winks-pc-port`.
+
+The setup executable is currently unsigned, so Windows may show a publisher warning. The release includes a SHA-256 file for verification. Windows 10 or 11 on x64 and an internet connection are required for first setup.
 
 ## Downloadable AppImage
 
@@ -32,7 +47,7 @@ The public release contains one self-building, ROM-free AppImage. On its first r
 
 The first build displays a 0-100% progress bar with the current download, CPU-generation, compilation, or packaging phase. Later launches of that same downloaded AppImage start the locally built game immediately. It stores private build files under `~/.cache/40-winks-pc-port/` and remembers the chosen location of the playable AppImage. The ROM is never copied or uploaded.
 
-The first build requires the development packages listed in [Building](docs/BUILDING.md) and an internet connection. Use `--rebuild` to rebuild the local game or `--select-rom` to choose the ROM again.
+The first Linux build requires the development packages listed in [Building](docs/BUILDING.md) and an internet connection. Use `--rebuild` to rebuild the local game or `--select-rom` to choose the ROM again.
 
 ## Build And Run
 

@@ -44,12 +44,44 @@ if(NOT EXISTS "${RECOMPILED_FUNCS_DIR}/funcs.h")
     )
 endif()
 
-find_package(SDL2 REQUIRED)
+if(WIN32)
+    set(FORTY_WINKS_SDL2_DIR
+        "${RT64_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3"
+    )
+    foreach(SDL2_FILE
+        "${FORTY_WINKS_SDL2_DIR}/include/SDL.h"
+        "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2.dll"
+        "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2.lib"
+        "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2main.lib"
+    )
+        if(NOT EXISTS "${SDL2_FILE}")
+            message(FATAL_ERROR "RT64's bundled Windows SDL2 file is missing: ${SDL2_FILE}")
+        endif()
+    endforeach()
+
+    add_library(SDL2::SDL2 SHARED IMPORTED GLOBAL)
+    set_target_properties(SDL2::SDL2 PROPERTIES
+        IMPORTED_LOCATION "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2.dll"
+        IMPORTED_IMPLIB "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${FORTY_WINKS_SDL2_DIR}/include"
+    )
+    add_library(SDL2::SDL2main STATIC IMPORTED GLOBAL)
+    set_target_properties(SDL2::SDL2main PROPERTIES
+        IMPORTED_LOCATION "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2main.lib"
+    )
+else()
+    find_package(SDL2 REQUIRED)
+endif()
 find_package(Threads REQUIRED)
 
 set(RT64_STATIC ON CACHE BOOL "" FORCE)
-set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
-set(NFD_PORTAL ON CACHE BOOL "" FORCE)
+if(WIN32)
+    set(RT64_SDL_WINDOW_VULKAN OFF CACHE BOOL "" FORCE)
+    set(NFD_PORTAL OFF CACHE BOOL "" FORCE)
+else()
+    set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
+    set(NFD_PORTAL ON CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(
     "${RT64_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}/rt64"
@@ -73,7 +105,11 @@ target_include_directories(forty_winks_recompiled PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
-if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+if(CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(forty_winks_recompiled PRIVATE
+        /clang:-fno-strict-aliasing
+    )
+elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(forty_winks_recompiled PRIVATE -fno-strict-aliasing)
 endif()
 
@@ -101,9 +137,19 @@ target_include_directories(forty-winks-recomp PRIVATE
 
 target_compile_definitions(forty-winks-recomp PRIVATE
     HLSL_CPU
-    PLUME_SDL_VULKAN_ENABLED
-    RT64_SDL_WINDOW_VULKAN
 )
+
+if(WIN32)
+    target_compile_definitions(forty-winks-recomp PRIVATE
+        NOMINMAX
+        _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR
+    )
+else()
+    target_compile_definitions(forty-winks-recomp PRIVATE
+        PLUME_SDL_VULKAN_ENABLED
+        RT64_SDL_WINDOW_VULKAN
+    )
+endif()
 
 target_link_libraries(forty-winks-recomp PRIVATE
     forty_winks_recompiled
@@ -114,8 +160,29 @@ target_link_libraries(forty-winks-recomp PRIVATE
     Threads::Threads
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(forty-winks-recomp PRIVATE /W4)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(forty-winks-recomp PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(WIN32)
+    set(FORTY_WINKS_RUNTIME_DLLS
+        "${FORTY_WINKS_SDL2_DIR}/lib/x64/SDL2.dll"
+        "${RT64_DIR}/src/contrib/dxc/bin/x64/dxcompiler.dll"
+        "${RT64_DIR}/src/contrib/dxc/bin/x64/dxil.dll"
+    )
+    add_custom_command(TARGET forty-winks-recomp POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            ${FORTY_WINKS_RUNTIME_DLLS}
+            "$<TARGET_FILE_DIR:forty-winks-recomp>"
+        VERBATIM
+    )
+    set_target_properties(forty-winks-recomp PROPERTIES
+        LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+        LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+        LINK_FLAGS_MINSIZEREL "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+    )
 endif()
 
 include(CTest)
@@ -177,3 +244,6 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS forty-winks-recomp RUNTIME DESTINATION bin)
+if(WIN32)
+    install(FILES ${FORTY_WINKS_RUNTIME_DLLS} DESTINATION bin)
+endif()

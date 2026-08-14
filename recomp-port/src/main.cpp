@@ -33,6 +33,14 @@ struct Options {
 };
 
 std::filesystem::path default_data_path() {
+#if defined(_WIN32)
+    if (const char* local_app_data = std::getenv("LOCALAPPDATA")) {
+        return std::filesystem::path{local_app_data} / "40-winks-pc-port";
+    }
+    if (const char* app_data = std::getenv("APPDATA")) {
+        return std::filesystem::path{app_data} / "40-winks-pc-port";
+    }
+#endif
     if (const char* xdg_data = std::getenv("XDG_DATA_HOME")) {
         return std::filesystem::path{xdg_data} / "40-winks-pc-port";
     }
@@ -151,12 +159,14 @@ int main(int argc, char** argv) {
     std::error_code path_error;
     std::filesystem::create_directories(options.data_path, path_error);
     if (path_error) {
+        const std::string data_path_text = options.data_path.string();
         std::fprintf(stderr, "Could not create data directory %s: %s\n",
-            options.data_path.c_str(), path_error.message().c_str());
+            data_path_text.c_str(), path_error.message().c_str());
         return EXIT_FAILURE;
     }
 
-    configure_controller_pak_storage(options.data_path.c_str());
+    const std::string data_path_text = options.data_path.string();
+    configure_controller_pak_storage(data_path_text.c_str());
 
     if (!forty_winks::platform::initialize(
             options.window_size,

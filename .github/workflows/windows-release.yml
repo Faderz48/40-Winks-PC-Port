@@ -1,0 +1,68 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/windows-release.yml"
+      - "packaging/windows/**"
+      - "recomp-port/**"
+      - "recomp/**"
+      - "patches/**"
+      - "tools/**"
+      - "docs/BUILDING.md"
+      - "README.md"
+      - "Makefile"
+
+permissions:
+  contents: read
+
+jobs:
+  build-launcher:
+    runs-on: windows-latest
+    steps:
+      - name: Keep source files in LF format
+        run: git config --global core.autocrlf false
+
+      - name: Check out public source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Check Windows build tools
+        shell: powershell
+        run: .\packaging\windows\build_playable.ps1 -CheckOnly
+
+      - name: Build ROM-free Windows setup
+        shell: powershell
+        run: >-
+          .\packaging\windows\build_release.ps1
+          -Version "0.1.2-alpha"
+          -BuildId "${{ github.sha }}"
+
+      - name: Verify embedded public payload
+        shell: powershell
+        run: |
+          $result = Join-Path $env:RUNNER_TEMP "windows-launcher-diagnostics.txt"
+          & .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
+              --diagnostics --diagnostics-output $result
+          if ($LASTEXITCODE -ne 0) {
+              if (Test-Path $result) { Get-Content $result }
+              throw "Windows launcher diagnostics failed."
+          }
+          Get-Content $result
+
+      - name: Upload Windows setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: 40-Winks-PC-Port-Windows-x64
+          path: |
+            dist/windows/40-Winks-PC-Port-Windows-x64.exe
+            dist/windows/40-Winks-PC-Port-Windows-x64.exe.sha256
+          if-no-files-found: error

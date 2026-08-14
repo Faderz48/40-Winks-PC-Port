@@ -98,7 +98,7 @@ int main() {
     const std::filesystem::path save_path =
         test_directory / "40-winks-controller-pak.note";
 
-    configure_controller_pak_storage(test_directory.c_str());
+    configure_controller_pak_storage(test_directory.string().c_str());
 
     recomp_context accessory_context{};
     write_byte(rdram, save_menu_choice_address, 1);
@@ -178,7 +178,7 @@ int main() {
         return 1;
     }
 
-    configure_controller_pak_storage(test_directory.c_str());
+    configure_controller_pak_storage(test_directory.string().c_str());
 
     clear_arguments(rdram);
     set_argument(rdram, 0, pfs_address);

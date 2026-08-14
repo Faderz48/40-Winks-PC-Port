@@ -1,6 +1,9 @@
 #include "platform.hpp"
 
 #include <SDL.h>
+#if defined(_WIN32)
+#include <SDL_syswm.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -306,21 +309,42 @@ void* create_gfx() {
 ultramodern::renderer::WindowHandle create_window(void*) {
     const int width = current_window_width.load();
     const int height = current_window_height.load();
+    Uint32 window_flags =
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+#if !defined(_WIN32)
+    window_flags |= SDL_WINDOW_VULKAN;
+#endif
     window = SDL_CreateWindow(
         "40 Winks PC Port",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         width,
         height,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
-            SDL_WINDOW_VULKAN);
+        window_flags);
 
     if (window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         ultramodern::quit();
+        return {};
     }
 
+#if defined(_WIN32)
+    SDL_SysWMinfo window_info{};
+    SDL_VERSION(&window_info.version);
+    if (SDL_GetWindowWMInfo(window, &window_info) != SDL_TRUE ||
+            window_info.subsystem != SDL_SYSWM_WINDOWS) {
+        std::fprintf(stderr, "SDL could not provide the Win32 window handle: %s\n",
+            SDL_GetError());
+        ultramodern::quit();
+        return {};
+    }
+    return {
+        .window = window_info.info.win.window,
+        .thread_id = GetCurrentThreadId(),
+    };
+#else
     return window;
+#endif
 }
 
 void update_gfx(void*) {
@@ -519,8 +543,9 @@ bool request_window_size(WindowSize size) {
     pending_window_height.store(size.height);
     window_resize_pending.store(true);
     if (!persist_window_size(size)) {
+        const std::string settings_path_text = window_settings_path.string();
         std::fprintf(stderr, "Could not save display settings to %s.\n",
-            window_settings_path.c_str());
+            settings_path_text.c_str());
         return false;
     }
     return true;

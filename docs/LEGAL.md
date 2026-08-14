@@ -29,7 +29,7 @@ GitHub can remove material in response to copyright claims under its [DMCA Taked
 
 Before distributing a binary, seek qualified legal advice or written permission from the relevant rights holders. Requiring a ROM at runtime prevents redistribution of assets, but the current executable also contains locally generated translations of CPU instructions.
 
-The project's public release AppImage is a ROM-free, self-building application. It contains the audited public source and redistributable setup code, then performs CPU translation and game compilation only on the lawful user's computer. The locally generated runtime remains excluded from public releases.
+The project's public AppImage and Windows setup are ROM-free, self-building applications. They contain the audited public source and redistributable setup code, then perform CPU translation and game compilation only on the lawful user's computer. The locally generated runtime remains excluded from public releases.
 
 ## Licensing
 

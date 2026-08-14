@@ -16,6 +16,8 @@ pc-port/
 # Downloaded dependencies and local build/package output.
 work/
 build/
+bin/
+obj/
 dist/
 cmake-build-*/
 CMakeCache.txt
@@ -44,6 +46,7 @@ packaging/linux/appimage/
 *.so.*
 *.dll
 *.exe
+*.pdb
 *.png
 *.jpg
 *.jpeg
