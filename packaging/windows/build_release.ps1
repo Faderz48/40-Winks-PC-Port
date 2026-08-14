@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.2-alpha",
+    [string]$Version = "0.1.3-alpha",
     [string]$BuildId = "dev"
 )
 

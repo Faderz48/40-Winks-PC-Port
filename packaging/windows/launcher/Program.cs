@@ -37,6 +37,10 @@ internal static class Program
             {
                 return RunDiagnostics(args);
             }
+            if (args.Contains("--requirements-check", StringComparer.OrdinalIgnoreCase))
+            {
+                return RunRequirementsCheck(args);
+            }
 
             Directory.CreateDirectory(AppDataDirectory);
             LauncherConfig config = LauncherConfig.Load(ConfigPath);
@@ -213,8 +217,7 @@ internal static class Program
             string[] required =
             {
                 "recomp-port/CMakeLists.txt",
-                "packaging/windows/build_playable.ps1",
-                "packaging/windows/install_requirements.ps1",
+                "packaging/windows/launcher/NativeBuildPipeline.cs",
                 "tools/generate_recomp_symbols.py",
                 "recomp/40winks.toml",
             };
@@ -228,7 +231,7 @@ internal static class Program
 
             string[] forbiddenExtensions =
             {
-                ".z64", ".n64", ".v64", ".rom", ".ips", ".dll", ".exe", ".AppImage",
+                ".z64", ".n64", ".v64", ".rom", ".ips", ".dll", ".exe", ".AppImage", ".ps1",
             };
             foreach (string entry in entries)
             {
@@ -242,7 +245,7 @@ internal static class Program
                 }
             }
 
-            string message = $"Windows launcher diagnostics passed: {entries.Count} public files; build {BuildId}.";
+            string message = $"PowerShell-free Windows launcher diagnostics passed: {entries.Count} public files; build {BuildId}.";
             int outputIndex = Array.FindIndex(args, argument =>
                 argument.Equals("--diagnostics-output", StringComparison.OrdinalIgnoreCase));
             if (outputIndex >= 0 && outputIndex + 1 < args.Length)
@@ -260,6 +263,34 @@ internal static class Program
                 File.WriteAllText(args[outputIndex + 1], exception.ToString());
             }
             return 1;
+        }
+    }
+
+    private static int RunRequirementsCheck(string[] args)
+    {
+        try
+        {
+            NativeBuildPipeline pipeline = new();
+            pipeline.CheckBuildToolsAsync(CancellationToken.None).GetAwaiter().GetResult();
+            WriteDiagnosticsOutput(
+                args,
+                $"Native Windows build-tool discovery passed; build {BuildId}.{Environment.NewLine}");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
+            return 1;
+        }
+    }
+
+    private static void WriteDiagnosticsOutput(string[] args, string text)
+    {
+        int outputIndex = Array.FindIndex(args, argument =>
+            argument.Equals("--diagnostics-output", StringComparison.OrdinalIgnoreCase));
+        if (outputIndex >= 0 && outputIndex + 1 < args.Length)
+        {
+            File.WriteAllText(args[outputIndex + 1], text);
         }
     }
 }

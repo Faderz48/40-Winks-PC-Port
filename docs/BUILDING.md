@@ -20,7 +20,7 @@ On the first build, the bootstrap script clones pinned revisions of N64Recomp, N
 - Git, Python 3, CMake, and Ninja
 - A Direct3D 12 or Vulkan capable GPU with current drivers
 
-The public Windows setup checks these requirements and can install them through Windows Package Manager after confirmation. The Visual Studio Build Tools download is large and may take several minutes.
+The public Windows setup checks these requirements and can install them directly through Windows Package Manager after confirmation. It does not invoke PowerShell. The Visual Studio Build Tools download is large and may take several minutes.
 
 ## Build
 
@@ -91,7 +91,9 @@ Build logs are written to `~/.cache/40-winks-pc-port/build.log`. On first setup 
 
 ## Windows Playable Build
 
-The Windows setup performs the same private generation flow from PowerShell:
+The downloadable Windows setup performs the private generation flow from its native C# pipeline. Select the ROM and output folder in the setup window, then choose **Build & Play**. It invokes Git, Python, CMake, Ninja, and the Visual Studio compiler directly; PowerShell is not used on the player's computer.
+
+The older command-line helper remains available for developers who explicitly prefer it:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\build_playable.ps1 `
@@ -99,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build_playable.ps1 `
     -OutputDirectory "$HOME\Documents\40 Winks PC Port"
 ```
 
-The script imports the Visual Studio x64 environment, builds with `clang-cl` and Ninja, copies `SDL2.dll`, `dxcompiler.dll`, and `dxil.dll` beside the native executable, and never copies the ROM into the output folder. When invoked directly, start it with `forty-winks-recomp.exe --rom C:\path\to\40-winks.z64`. The public setup also copies `40-Winks-PC-Port.exe` into the output folder so later launches need no arguments.
+Both paths import the Visual Studio x64 environment, build with `clang-cl` and Ninja, copy `SDL2.dll`, `dxcompiler.dll`, and `dxil.dll` beside the native executable, and never copy the ROM into the output folder. When invoked directly, start it with `forty-winks-recomp.exe --rom C:\path\to\40-winks.z64`. The public setup also copies `40-Winks-PC-Port.exe` into the output folder so later launches need no arguments.
 
 The redistributable setup executable is built by the Windows GitHub Actions workflow or locally with PowerShell and the .NET 8 SDK:
 

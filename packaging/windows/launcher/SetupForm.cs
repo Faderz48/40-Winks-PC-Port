@@ -6,6 +6,7 @@ namespace FortyWinksSetup;
 internal sealed class SetupForm : Form
 {
     private readonly LauncherConfig config;
+    private readonly NativeBuildPipeline buildPipeline = new();
     private readonly TextBox romPathBox = new();
     private readonly TextBox outputPathBox = new();
     private readonly Button browseRomButton = new();
@@ -16,8 +17,7 @@ internal sealed class SetupForm : Form
     private readonly Button detailsButton = new();
     private readonly ProgressBar progressBar = new();
     private readonly Label statusLabel = new();
-    private Process? buildProcess;
-    private string missingTools = "";
+    private CancellationTokenSource? activeOperation;
 
     public SetupForm(LauncherConfig config)
     {
@@ -31,6 +31,17 @@ internal sealed class SetupForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
 
         BuildInterface();
+        buildPipeline.ProgressChanged += (percent, message) =>
+        {
+            if (!IsDisposed && IsHandleCreated)
+            {
+                BeginInvoke(() =>
+                {
+                    progressBar.Value = Math.Clamp(percent, 0, 100);
+                    statusLabel.Text = $"{progressBar.Value}% - {message}";
+                });
+            }
+        };
         romPathBox.Text = config.RomPath;
         outputPathBox.Text = string.IsNullOrWhiteSpace(config.OutputDirectory)
             ? Path.Combine(
@@ -238,6 +249,7 @@ internal sealed class SetupForm : Form
 
     private async Task BuildAndPlayAsync()
     {
+        bool installTools = false;
         string romPath = romPathBox.Text.Trim();
         string outputDirectory = outputPathBox.Text.Trim();
         if (!File.Exists(romPath))
@@ -252,7 +264,8 @@ internal sealed class SetupForm : Form
         }
 
         SetBusy(true);
-        missingTools = "";
+        using CancellationTokenSource operation = new();
+        activeOperation = operation;
         progressBar.Value = 1;
         statusLabel.Text = "Verifying ROM";
         try
@@ -265,28 +278,13 @@ internal sealed class SetupForm : Form
             }
 
             string sourceDirectory = await Task.Run(Program.ExtractSourcePayload);
-            Directory.CreateDirectory(Path.GetDirectoryName(Program.LogPath)!);
-            int exitCode = await RunBuildProcessAsync(sourceDirectory, romPath, outputDirectory);
-            if (exitCode != 0)
-            {
-                if (!string.IsNullOrWhiteSpace(missingTools))
-                {
-                    DialogResult choice = MessageBox.Show(
-                        this,
-                        $"Windows needs these build tools:\n\n{missingTools}\n\nInstall them now?",
-                        "40 Winks PC Port",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Information);
-                    if (choice == DialogResult.Yes)
-                    {
-                        SetBusy(false);
-                        await InstallBuildToolsAsync(true);
-                    }
-                    return;
-                }
-                throw new InvalidOperationException(
-                    $"The playable build did not complete. The build log is at:\n{Program.LogPath}");
-            }
+            int jobs = Math.Max(1, Math.Min(Environment.ProcessorCount - 1, 4));
+            await buildPipeline.BuildAsync(
+                sourceDirectory,
+                romPath,
+                outputDirectory,
+                jobs,
+                operation.Token);
 
             Directory.CreateDirectory(outputDirectory);
             File.WriteAllText(Path.Combine(outputDirectory, ".builder-version"), Program.BuildId);
@@ -301,6 +299,24 @@ internal sealed class SetupForm : Form
             openFolderButton.Visible = true;
             Program.LaunchGame(outputDirectory, romPath);
         }
+        catch (MissingBuildToolsException exception)
+        {
+            statusLabel.Text = "Build tools needed";
+            DialogResult choice = MessageBox.Show(
+                this,
+                $"Windows needs these build tools:\n\n{string.Join(", ", exception.Tools)}\n\nInstall them now?",
+                "40 Winks PC Port",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+            if (choice == DialogResult.Yes)
+            {
+                installTools = true;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            statusLabel.Text = "Build cancelled";
+        }
         catch (Exception exception)
         {
             statusLabel.Text = "Build stopped";
@@ -308,119 +324,37 @@ internal sealed class SetupForm : Form
         }
         finally
         {
+            if (ReferenceEquals(activeOperation, operation))
+            {
+                activeOperation = null;
+            }
             SetBusy(false);
         }
-    }
 
-    private async Task<int> RunBuildProcessAsync(
-        string sourceDirectory,
-        string romPath,
-        string outputDirectory)
-    {
-        string scriptPath = Path.Combine(
-            sourceDirectory, "packaging", "windows", "build_playable.ps1");
-        string powerShell = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.System),
-            "WindowsPowerShell", "v1.0", "powershell.exe");
-        int jobs = Math.Max(1, Math.Min(Environment.ProcessorCount - 1, 4));
-        ProcessStartInfo startInfo = new(powerShell)
+        if (installTools)
         {
-            WorkingDirectory = sourceDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-ExecutionPolicy");
-        startInfo.ArgumentList.Add("Bypass");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(scriptPath);
-        startInfo.ArgumentList.Add("-RomPath");
-        startInfo.ArgumentList.Add(romPath);
-        startInfo.ArgumentList.Add("-OutputDirectory");
-        startInfo.ArgumentList.Add(outputDirectory);
-        startInfo.ArgumentList.Add("-Jobs");
-        startInfo.ArgumentList.Add(jobs.ToString());
-
-        using StreamWriter log = new(Program.LogPath, false);
-        using Process process = new() { StartInfo = startInfo };
-        buildProcess = process;
-        object logLock = new();
-        DataReceivedEventHandler receiveLine = (_, eventArgs) =>
-        {
-            if (eventArgs.Data is null)
-            {
-                return;
-            }
-            lock (logLock)
-            {
-                log.WriteLine(eventArgs.Data);
-                log.Flush();
-            }
-            BeginInvoke(() => HandleBuildLine(eventArgs.Data));
-        };
-        process.OutputDataReceived += receiveLine;
-        process.ErrorDataReceived += receiveLine;
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        await process.WaitForExitAsync();
-        process.WaitForExit();
-        buildProcess = null;
-        return process.ExitCode;
-    }
-
-    private void HandleBuildLine(string line)
-    {
-        if (line.StartsWith("FORTY_WINKS_PROGRESS|", StringComparison.Ordinal))
-        {
-            string[] pieces = line.Split(new[] { '|' }, 3);
-            if (pieces.Length == 3 && int.TryParse(pieces[1], out int percent))
-            {
-                progressBar.Value = Math.Clamp(percent, 0, 100);
-                statusLabel.Text = $"{progressBar.Value}% - {pieces[2]}";
-            }
-        }
-        else if (line.StartsWith("FORTY_WINKS_MISSING_TOOLS|", StringComparison.Ordinal))
-        {
-            missingTools = line[(line.IndexOf('|') + 1)..];
+            await InstallBuildToolsAsync(true);
         }
     }
 
     private async Task InstallBuildToolsAsync(bool resumeBuild)
     {
+        bool toolsInstalled = false;
+        using CancellationTokenSource operation = new();
         try
         {
             SetBusy(true);
+            activeOperation = operation;
+            progressBar.Value = 1;
             statusLabel.Text = "Installing Windows build tools";
-            string sourceDirectory = await Task.Run(Program.ExtractSourcePayload);
-            string scriptPath = Path.Combine(
-                sourceDirectory, "packaging", "windows", "install_requirements.ps1");
-            string powerShell = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "WindowsPowerShell", "v1.0", "powershell.exe");
-            ProcessStartInfo startInfo = new(powerShell)
-            {
-                UseShellExecute = true,
-                Verb = "runas",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"",
-            };
-            using Process process = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("The build-tool installer did not start.");
-            await process.WaitForExitAsync();
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException(
-                    "The build-tool installation did not complete. You can run it again from this window.");
-            }
+            await buildPipeline.InstallBuildToolsAsync(operation.Token);
 
             statusLabel.Text = "Build tools installed";
-            if (resumeBuild)
-            {
-                SetBusy(false);
-                await BuildAndPlayAsync();
-            }
+            toolsInstalled = true;
+        }
+        catch (OperationCanceledException)
+        {
+            statusLabel.Text = "Build-tool setup cancelled";
         }
         catch (Exception exception)
         {
@@ -429,7 +363,16 @@ internal sealed class SetupForm : Form
         }
         finally
         {
+            if (ReferenceEquals(activeOperation, operation))
+            {
+                activeOperation = null;
+            }
             SetBusy(false);
+        }
+
+        if (toolsInstalled && resumeBuild)
+        {
+            await BuildAndPlayAsync();
         }
     }
 
@@ -479,14 +422,14 @@ internal sealed class SetupForm : Form
 
     private void OnFormClosing(object? sender, FormClosingEventArgs eventArgs)
     {
-        if (buildProcess is null || buildProcess.HasExited)
+        if (activeOperation is null)
         {
             return;
         }
 
         DialogResult choice = MessageBox.Show(
             this,
-            "The playable game is still building. Stop the build and close?",
+            "Setup is still working. Stop it and close?",
             Text,
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -498,7 +441,8 @@ internal sealed class SetupForm : Form
 
         try
         {
-            buildProcess.Kill(true);
+            activeOperation.Cancel();
+            buildPipeline.Cancel();
         }
         catch
         {

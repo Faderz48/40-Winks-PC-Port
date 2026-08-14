@@ -30,7 +30,7 @@ Download `40-Winks-PC-Port-Windows-x64.exe` from the release and run it. On firs
 5. Downloads pinned open-source dependencies and generates the native game locally.
 6. Places a launcher, the game executable, and required graphics DLLs in the chosen folder, then starts the game.
 
-The setup window shows 0-100% progress throughout generation and compilation. Later launches of `40-Winks-PC-Port.exe` from the chosen folder start the game immediately. Private source and generated CPU files stay under `%LOCALAPPDATA%\40WinksBuild`; saves, settings, and the remembered ROM location stay under `%LOCALAPPDATA%\40-winks-pc-port`.
+The setup performs those steps directly and does not start PowerShell. Interrupted dependency downloads are retried and reused on the next run. The window shows 0-100% progress throughout generation and compilation. Later launches of `40-Winks-PC-Port.exe` from the chosen folder start the game immediately. Private source and generated CPU files stay under `%LOCALAPPDATA%\40WinksBuild`; saves, settings, and the remembered ROM location stay under `%LOCALAPPDATA%\40-winks-pc-port`.
 
 The setup executable is currently unsigned, so Windows may show a publisher warning. The release includes a SHA-256 file for verification. Windows 10 or 11 on x64 and an internet connection are required for first setup.
 
