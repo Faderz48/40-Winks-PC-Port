@@ -50,9 +50,11 @@ jobs:
         shell: powershell
         run: |
           $result = Join-Path $env:RUNNER_TEMP "windows-launcher-diagnostics.txt"
-          & .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
-              --diagnostics --diagnostics-output $result
-          if ($LASTEXITCODE -ne 0) {
+          $process = Start-Process `
+              -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
+              -ArgumentList @("--diagnostics", "--diagnostics-output", "`"$result`"") `
+              -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
               if (Test-Path $result) { Get-Content $result }
               throw "Windows launcher diagnostics failed."
           }
