@@ -46,6 +46,11 @@ if git grep -n -I -E '/home/[A-Za-z0-9._-]+/|gh[pousr]_[A-Za-z0-9_]{20,}|github_
     failed=1
 fi
 
+if git grep -n -I -E 'winget(\.exe)?' -- packaging/windows/launcher; then
+    echo "Windows launcher must not depend on Windows Package Manager." >&2
+    failed=1
+fi
+
 if [ "$failed" -ne 0 ]; then
     exit 1
 fi

@@ -132,7 +132,7 @@ internal sealed class SetupForm : Form
         };
         ConfigureButton(buildButton, "Build & Play", true);
         buildButton.Click += async (_, _) => await BuildAndPlayAsync();
-        ConfigureButton(installToolsButton, "Install Build Tools", false);
+        ConfigureButton(installToolsButton, "Set Up Build Tools", false);
         installToolsButton.Click += async (_, _) => await InstallBuildToolsAsync(false);
         ConfigureButton(openFolderButton, "Open Build Folder", false);
         openFolderButton.Visible = false;
@@ -304,7 +304,9 @@ internal sealed class SetupForm : Form
             statusLabel.Text = "Build tools needed";
             DialogResult choice = MessageBox.Show(
                 this,
-                $"Windows needs these build tools:\n\n{string.Join(", ", exception.Tools)}\n\nInstall them now?",
+                $"Setup needs these build tools:\n\n{string.Join(", ", exception.Tools)}\n\n" +
+                "The app will download and manage them itself. Microsoft's compiler " +
+                "is a large download and will request Windows administrator approval.\n\nContinue?",
                 "40 Winks PC Port",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Information);

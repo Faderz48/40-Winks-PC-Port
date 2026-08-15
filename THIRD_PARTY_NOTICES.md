@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This repository does not vendor the dependency source trees. The bootstrap script downloads pinned revisions from their original repositories and applies the patches in `patches/`.
+This repository does not vendor the dependency source trees. The bootstrap script downloads pinned revisions from their original repositories and applies the patches in `patches/`. The Windows setup also downloads verified portable build tools into its private local cache; those tools are not committed to this repository or included in the ROM-free setup executable.
 
 | Component | Revision | License | Purpose |
 | --- | --- | --- | --- |
@@ -10,6 +10,11 @@ This repository does not vendor the dependency source trees. The bootstrap scrip
 | [40 Winks N64 True Split-screen](https://github.com/Faderz48/40-Winks-N64-True-Split-screen) | `b646ce99fa4c863e9bb8eefa6ee461c1f52c0c06` | MIT | Full-width top/bottom viewport layout |
 | [AppImageKit](https://github.com/AppImage/AppImageKit) | appimagetool continuous build `5735cc5` | MIT | AppImage packaging and runtime |
 | [.NET Runtime](https://github.com/dotnet/runtime) | 8.x self-contained runtime | MIT and third-party notices | Windows first-run setup application |
+| [Git for Windows MinGit](https://github.com/git-for-windows/git) | `2.55.0.windows.4` | GPL-2.0 and bundled notices | Private source checkout tool |
+| [CMake](https://github.com/Kitware/CMake) | `3.31.10` | BSD-3-Clause | Private build configuration tool |
+| [Ninja](https://github.com/ninja-build/ninja) | `1.13.2` | Apache-2.0 | Private build executor |
+| [Python](https://www.python.org/) | `3.13.14` embeddable package | Python Software Foundation License | Private symbol generation tool |
+| [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) | 2022 current channel bootstrapper | Microsoft license terms | C++ and Clang compiler installed from Microsoft's service |
 
 Copies of the applicable MIT license texts are under `LICENSES/`. N64ModernRuntime's GPL-3.0 terms are reproduced in the root `LICENSE` file. The .NET Runtime's complete current [third-party notices](https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT) remain available from its official repository.
 

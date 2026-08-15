@@ -1,4 +1,5 @@
 using System.Collections;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -44,16 +45,25 @@ internal sealed class NativeBuildPipeline
 
     private readonly Dictionary<string, string> environment =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly ManagedToolchain managedToolchain = new();
     private readonly object processLock = new();
     private readonly object logLock = new();
     private Process? activeProcess;
     private StreamWriter? log;
     private string git = "git.exe";
     private string cmake = "cmake.exe";
+    private string ninja = "ninja.exe";
     private PythonCommand? python;
 
     public event Action<int, string>? ProgressChanged;
     public event Action<string>? OutputReceived;
+
+    public NativeBuildPipeline()
+    {
+        managedToolchain.ProgressChanged += (percent, message) =>
+            ProgressChanged?.Invoke(percent, message);
+        managedToolchain.OutputReceived += WriteOutput;
+    }
 
     public async Task CheckBuildToolsAsync(CancellationToken cancellationToken)
     {
@@ -63,6 +73,99 @@ internal sealed class NativeBuildPipeline
         try
         {
             await FindBuildRequirementsAsync(cancellationToken);
+        }
+        finally
+        {
+            log = null;
+        }
+    }
+
+    public async Task InstallPortableToolsAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Program.LogPath)!);
+        using StreamWriter installLog = new(Program.LogPath, true, new UTF8Encoding(false));
+        log = installLog;
+        try
+        {
+            await managedToolchain.InstallPortableToolsAsync(cancellationToken);
+            Report(100, "Portable build tools ready");
+        }
+        finally
+        {
+            log = null;
+        }
+    }
+
+    public async Task DownloadCompilerSetupAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Program.LogPath)!);
+        using StreamWriter downloadLog = new(Program.LogPath, true, new UTF8Encoding(false));
+        log = downloadLog;
+        try
+        {
+            await managedToolchain.DownloadCompilerBootstrapperAsync(cancellationToken);
+            Report(100, "Microsoft compiler setup verified");
+        }
+        finally
+        {
+            log = null;
+        }
+    }
+
+    public async Task RunToolchainSmokeTestAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Program.LogPath)!);
+        using StreamWriter testLog = new(Program.LogPath, true, new UTF8Encoding(false));
+        log = testLog;
+        try
+        {
+            await FindBuildRequirementsAsync(cancellationToken);
+            string sourceDirectory = Path.Combine(Program.BuildCacheDirectory, "toolchain-test");
+            string buildDirectory = Path.Combine(sourceDirectory, "build");
+            DeleteDirectory(sourceDirectory);
+            Directory.CreateDirectory(sourceDirectory);
+            File.WriteAllText(
+                Path.Combine(sourceDirectory, "CMakeLists.txt"),
+                """
+                cmake_minimum_required(VERSION 3.20)
+                project(forty_winks_toolchain_test LANGUAGES CXX)
+                add_executable(forty-winks-toolchain-test main.cpp)
+                """ + Environment.NewLine,
+                Encoding.ASCII);
+            File.WriteAllText(
+                Path.Combine(sourceDirectory, "main.cpp"),
+                """
+                #include <windows.h>
+                int main() {
+                    return IsProcessorFeaturePresent(PF_COMPARE_EXCHANGE_DOUBLE) ? 0 : 0;
+                }
+                """ + Environment.NewLine,
+                Encoding.ASCII);
+
+            await RunRequiredAsync(
+                cmake,
+                new[]
+                {
+                    "-S", sourceDirectory,
+                    "-B", buildDirectory,
+                    "-G", "Ninja",
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    $"-DCMAKE_MAKE_PROGRAM={ninja}",
+                },
+                sourceDirectory,
+                cancellationToken);
+            await RunRequiredAsync(
+                cmake,
+                new[] { "--build", buildDirectory, "--parallel", "2" },
+                sourceDirectory,
+                cancellationToken);
+            await RunRequiredAsync(
+                Path.Combine(buildDirectory, "forty-winks-toolchain-test.exe"),
+                Array.Empty<string>(),
+                buildDirectory,
+                cancellationToken);
+            Report(100, "Managed Windows toolchain test passed");
         }
         finally
         {
@@ -129,6 +232,7 @@ internal sealed class NativeBuildPipeline
                     "-DCMAKE_BUILD_TYPE=Release",
                     "-DCMAKE_C_COMPILER=clang-cl",
                     "-DCMAKE_CXX_COMPILER=clang-cl",
+                    $"-DCMAKE_MAKE_PROGRAM={ninja}",
                 },
                 sourceDirectory,
                 cancellationToken);
@@ -198,6 +302,7 @@ internal sealed class NativeBuildPipeline
                     "-DCMAKE_BUILD_TYPE=Release",
                     "-DCMAKE_C_COMPILER=clang-cl",
                     "-DCMAKE_CXX_COMPILER=clang-cl",
+                    $"-DCMAKE_MAKE_PROGRAM={ninja}",
                     "-DBUILD_TESTING=OFF",
                 },
                 sourceDirectory,
@@ -267,61 +372,132 @@ internal sealed class NativeBuildPipeline
         log = installLog;
         try
         {
+            ManagedToolPaths managedTools =
+                await managedToolchain.InstallPortableToolsAsync(cancellationToken);
             LoadCurrentEnvironment();
-            string? winget = FindExecutable("winget.exe");
-            if (winget is null)
-            {
-                throw new InvalidOperationException(
-                    "Windows Package Manager was not found. Install 'App Installer' from Microsoft, then reopen this setup.");
-            }
+            ConfigureManagedTools(managedTools);
 
-            (string Name, string Id, string[] ExtraArguments)[] packages =
+            bool compilerReady =
+                await ImportVisualStudioEnvironmentAsync(cancellationToken) &&
+                FindExecutable("clang-cl.exe") is not null;
+            if (!compilerReady)
             {
-                ("Git", "Git.Git", Array.Empty<string>()),
-                ("Python", "Python.Python.3.13", Array.Empty<string>()),
-                ("CMake", "Kitware.CMake", Array.Empty<string>()),
-                ("Ninja", "Ninja-build.Ninja", Array.Empty<string>()),
-                (
-                    "Visual Studio C++ Build Tools",
-                    "Microsoft.VisualStudio.2022.BuildTools",
-                    new[]
-                    {
-                        "--override",
-                        "--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --includeRecommended",
-                    }),
-            };
-
-            for (int index = 0; index < packages.Length; index++)
-            {
-                (string name, string id, string[] extraArguments) = packages[index];
-                int percent = 5 + (index * 85 / packages.Length);
-                Report(percent, $"Installing {name}");
-                List<string> arguments = new()
+                Report(59, "Downloading Microsoft C++ compiler setup");
+                string bootstrapper = await managedToolchain
+                    .DownloadCompilerBootstrapperAsync(cancellationToken);
+                Report(66, "Installing Microsoft C++ compiler");
+                int exitCode;
+                try
                 {
-                    "install",
-                    "--id", id,
-                    "--exact",
-                    "--source", "winget",
-                    "--silent",
-                    "--disable-interactivity",
-                    "--accept-package-agreements",
-                    "--accept-source-agreements",
-                };
-                arguments.AddRange(extraArguments);
-                await RunWithRetriesAsync(
-                    winget,
-                    arguments,
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    cancellationToken,
-                    $"Installing {name}",
-                    attempts: 2);
+                    exitCode = await RunElevatedProcessAsync(
+                        bootstrapper,
+                        new[]
+                        {
+                            "--quiet",
+                            "--wait",
+                            "--norestart",
+                            "--nocache",
+                            "--add", "Microsoft.VisualStudio.Workload.VCTools",
+                            "--add", "Microsoft.VisualStudio.Component.VC.Llvm.Clang",
+                            "--includeRecommended",
+                        },
+                        cancellationToken);
+                }
+                catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
+                {
+                    throw new InvalidOperationException(
+                        "Microsoft's compiler setup needs administrator approval. " +
+                        "Run the setup again and approve the Windows permission prompt.",
+                        exception);
+                }
+
+                if (exitCode == 3010)
+                {
+                    throw new InvalidOperationException(
+                        "Microsoft's compiler finished installing and Windows needs to restart. " +
+                        "Restart Windows, then run this setup again.");
+                }
+                if (exitCode != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Microsoft's compiler setup stopped with exit code {exitCode}.");
+                }
+
+                Report(94, "Checking Microsoft C++ compiler");
+                LoadCurrentEnvironment();
+                ConfigureManagedTools(managedTools);
+                compilerReady =
+                    await ImportVisualStudioEnvironmentAsync(cancellationToken) &&
+                    FindExecutable("clang-cl.exe") is not null;
+                if (!compilerReady)
+                {
+                    throw new InvalidOperationException(
+                        "Microsoft's compiler setup completed, but the C++ and Clang tools " +
+                        "were not found. Restart Windows and run this setup again.");
+                }
             }
 
-            Report(100, "Build tools installed");
+            Report(100, "Build tools ready");
         }
         finally
         {
             log = null;
+        }
+    }
+
+    private async Task<int> RunElevatedProcessAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ProcessStartInfo startInfo = new(fileName)
+        {
+            WorkingDirectory = Path.GetDirectoryName(fileName)!,
+            UseShellExecute = true,
+            Verb = "runas",
+        };
+        foreach (string argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+        WriteLog($"> {Path.GetFileName(fileName)} {FormatArguments(arguments)}");
+
+        using Process process = new() { StartInfo = startInfo };
+        process.Start();
+        lock (processLock)
+        {
+            activeProcess = process;
+        }
+        try
+        {
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                try
+                {
+                    process.Kill(true);
+                }
+                catch
+                {
+                    // Windows may deny terminating an elevated installer.
+                }
+                throw;
+            }
+            return process.ExitCode;
+        }
+        finally
+        {
+            lock (processLock)
+            {
+                if (ReferenceEquals(activeProcess, process))
+                {
+                    activeProcess = null;
+                }
+            }
         }
     }
 
@@ -351,27 +527,85 @@ internal sealed class NativeBuildPipeline
     private async Task FindBuildRequirementsAsync(CancellationToken cancellationToken)
     {
         LoadCurrentEnvironment();
+        ManagedToolPaths? managedTools = managedToolchain.FindInstalled();
+        if (managedTools is not null)
+        {
+            ConfigureManagedTools(managedTools);
+        }
+
         bool hasVisualStudio = await ImportVisualStudioEnvironmentAsync(cancellationToken);
         List<string> missing = new();
         if (!hasVisualStudio)
         {
-            missing.Add("Visual Studio 2022 C++ Build Tools");
+            missing.Add("Microsoft C++ and Clang compiler");
         }
 
-        git = RequireExecutable("git.exe", "Git", missing);
-        cmake = RequireExecutable("cmake.exe", "CMake", missing);
-        RequireExecutable("ninja.exe", "Ninja", missing);
-        RequireExecutable("clang-cl.exe", "Clang compiler", missing);
-        python = await FindPythonAsync(cancellationToken);
-        if (python is null)
+        if (managedTools is null)
         {
-            missing.Add("Python 3");
+            missing.Add("portable Git, CMake, Ninja, and Python");
+        }
+        else
+        {
+            await ValidateManagedToolAsync(
+                git, new[] { "--version" }, "portable Git", missing, cancellationToken);
+            await ValidateManagedToolAsync(
+                cmake, new[] { "--version" }, "portable CMake", missing, cancellationToken);
+            await ValidateManagedToolAsync(
+                ninja, new[] { "--version" }, "portable Ninja", missing, cancellationToken);
+            await ValidateManagedToolAsync(
+                python!.FileName,
+                new[] { "--version" },
+                "portable Python",
+                missing,
+                cancellationToken);
+        }
+
+        if (hasVisualStudio)
+        {
+            RequireExecutable("clang-cl.exe", "Clang compiler", missing);
         }
 
         if (missing.Count != 0)
         {
             throw new MissingBuildToolsException(missing.Distinct().ToArray());
         }
+    }
+
+    private async Task ValidateManagedToolAsync(
+        string fileName,
+        IReadOnlyList<string> arguments,
+        string displayName,
+        List<string> missing,
+        CancellationToken cancellationToken)
+    {
+        ProcessResult result = await RunProcessAsync(
+            fileName,
+            arguments,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            cancellationToken,
+            false);
+        if (result.ExitCode != 0)
+        {
+            missing.Add(displayName);
+        }
+    }
+
+    private void ConfigureManagedTools(ManagedToolPaths paths)
+    {
+        git = paths.Git;
+        cmake = paths.CMake;
+        ninja = paths.Ninja;
+        python = new PythonCommand(paths.Python, Array.Empty<string>());
+        PrependPath(Path.GetDirectoryName(paths.Git)!);
+        PrependPath(Path.GetDirectoryName(paths.CMake)!);
+        PrependPath(Path.GetDirectoryName(paths.Ninja)!);
+        PrependPath(Path.GetDirectoryName(paths.Python)!);
+    }
+
+    private void PrependPath(string directory)
+    {
+        string current = environment.GetValueOrDefault("Path") ?? "";
+        environment["Path"] = directory + Path.PathSeparator + current;
     }
 
     private void LoadCurrentEnvironment()
@@ -472,40 +706,6 @@ internal sealed class NativeBuildPipeline
             }
         }
         return true;
-    }
-
-    private async Task<PythonCommand?> FindPythonAsync(CancellationToken cancellationToken)
-    {
-        string? py = FindExecutable("py.exe");
-        if (py is not null)
-        {
-            ProcessResult result = await RunProcessAsync(
-                py,
-                new[] { "-3", "--version" },
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                cancellationToken,
-                false);
-            if (result.ExitCode == 0)
-            {
-                return new PythonCommand(py, new[] { "-3" });
-            }
-        }
-
-        string? pythonExecutable = FindExecutable("python.exe");
-        if (pythonExecutable is not null)
-        {
-            ProcessResult result = await RunProcessAsync(
-                pythonExecutable,
-                new[] { "--version" },
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                cancellationToken,
-                false);
-            if (result.ExitCode == 0)
-            {
-                return new PythonCommand(pythonExecutable, Array.Empty<string>());
-            }
-        }
-        return null;
     }
 
     private string RequireExecutable(string name, string displayName, List<string> missing)

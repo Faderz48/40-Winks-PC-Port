@@ -26,13 +26,13 @@ Download `40-Winks-PC-Port-Windows-x64.exe` from the release and run it. On firs
 1. Asks you to select the supported ROM.
 2. Verifies the ROM before doing any build work.
 3. Asks where to put the finished playable Windows build.
-4. Offers to install the required Windows build tools when they are missing.
+4. Downloads private, pinned copies of Git, Python, CMake, and Ninja for itself.
 5. Downloads pinned open-source dependencies and generates the native game locally.
 6. Places a launcher, the game executable, and required graphics DLLs in the chosen folder, then starts the game.
 
-The setup performs those steps directly and does not start PowerShell. Interrupted dependency downloads are retried and reused on the next run. The window shows 0-100% progress throughout generation and compilation. Later launches of `40-Winks-PC-Port.exe` from the chosen folder start the game immediately. Private source and generated CPU files stay under `%LOCALAPPDATA%\40WinksBuild`; saves, settings, and the remembered ROM location stay under `%LOCALAPPDATA%\40-winks-pc-port`.
+The setup performs those steps directly and uses neither PowerShell nor Windows Package Manager. No preinstalled Git, Python, CMake, or Ninja is needed. If Microsoft's C++ compiler is absent, the app downloads the verified official installer, requests administrator approval, and selects only the required C++ and Clang components. Interrupted downloads are retried and reused on the next run. The window shows 0-100% progress throughout generation and compilation. Later launches of `40-Winks-PC-Port.exe` from the chosen folder start the game immediately. Private tools, source, and generated CPU files stay under `%LOCALAPPDATA%\40WinksBuild`; saves, settings, and the remembered ROM location stay under `%LOCALAPPDATA%\40-winks-pc-port`.
 
-The setup executable is currently unsigned, so Windows may show a publisher warning. The release includes a SHA-256 file for verification. Windows 10 or 11 on x64 and an internet connection are required for first setup.
+The setup executable is currently unsigned, so Windows may show a publisher warning. The release includes a SHA-256 file for verification. Windows 10 or 11 on x64, an internet connection, several gigabytes of free build space, and administrator approval for Microsoft's compiler are required for first setup.
 
 ## Downloadable AppImage
 

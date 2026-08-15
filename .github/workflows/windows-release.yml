@@ -43,7 +43,7 @@ jobs:
         shell: powershell
         run: >-
           .\packaging\windows\build_release.ps1
-          -Version "0.1.3-alpha"
+          -Version "0.1.4-alpha"
           -BuildId "${{ github.sha }}"
 
       - name: Verify embedded public payload
@@ -63,6 +63,28 @@ jobs:
       - name: Verify native build-tool discovery
         shell: powershell
         run: |
+          $portableResult = Join-Path $env:RUNNER_TEMP "windows-portable-tools.txt"
+          $portableProcess = Start-Process `
+              -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
+              -ArgumentList @("--install-portable-tools", "--diagnostics-output", "`"$portableResult`"") `
+              -Wait -PassThru
+          if ($portableProcess.ExitCode -ne 0) {
+              if (Test-Path $portableResult) { Get-Content $portableResult }
+              throw "Self-managed Windows tool download failed."
+          }
+          Get-Content $portableResult
+
+          $compilerResult = Join-Path $env:RUNNER_TEMP "windows-compiler-download.txt"
+          $compilerProcess = Start-Process `
+              -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
+              -ArgumentList @("--download-compiler-setup", "--diagnostics-output", "`"$compilerResult`"") `
+              -Wait -PassThru
+          if ($compilerProcess.ExitCode -ne 0) {
+              if (Test-Path $compilerResult) { Get-Content $compilerResult }
+              throw "Microsoft compiler setup download failed."
+          }
+          Get-Content $compilerResult
+
           $result = Join-Path $env:RUNNER_TEMP "windows-requirements-diagnostics.txt"
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
@@ -73,6 +95,17 @@ jobs:
               throw "Native Windows build-tool discovery failed."
           }
           Get-Content $result
+
+          $smokeResult = Join-Path $env:RUNNER_TEMP "windows-toolchain-smoke-test.txt"
+          $smokeProcess = Start-Process `
+              -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
+              -ArgumentList @("--toolchain-smoke-test", "--diagnostics-output", "`"$smokeResult`"") `
+              -Wait -PassThru
+          if ($smokeProcess.ExitCode -ne 0) {
+              if (Test-Path $smokeResult) { Get-Content $smokeResult }
+              throw "Managed Windows compiler smoke test failed."
+          }
+          Get-Content $smokeResult
 
       - name: Upload Windows setup
         uses: actions/upload-artifact@v4

@@ -41,6 +41,22 @@ internal static class Program
             {
                 return RunRequirementsCheck(args);
             }
+            if (args.Contains("--install-build-tools", StringComparer.OrdinalIgnoreCase))
+            {
+                return RunBuildToolInstall(args);
+            }
+            if (args.Contains("--install-portable-tools", StringComparer.OrdinalIgnoreCase))
+            {
+                return RunPortableToolInstall(args);
+            }
+            if (args.Contains("--download-compiler-setup", StringComparer.OrdinalIgnoreCase))
+            {
+                return RunCompilerSetupDownload(args);
+            }
+            if (args.Contains("--toolchain-smoke-test", StringComparer.OrdinalIgnoreCase))
+            {
+                return RunToolchainSmokeTest(args);
+            }
 
             Directory.CreateDirectory(AppDataDirectory);
             LauncherConfig config = LauncherConfig.Load(ConfigPath);
@@ -218,6 +234,7 @@ internal static class Program
             {
                 "recomp-port/CMakeLists.txt",
                 "packaging/windows/launcher/NativeBuildPipeline.cs",
+                "packaging/windows/launcher/ManagedToolchain.cs",
                 "tools/generate_recomp_symbols.py",
                 "recomp/40winks.toml",
             };
@@ -275,6 +292,83 @@ internal static class Program
             WriteDiagnosticsOutput(
                 args,
                 $"Native Windows build-tool discovery passed; build {BuildId}.{Environment.NewLine}");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
+            return 1;
+        }
+    }
+
+    private static int RunBuildToolInstall(string[] args)
+    {
+        try
+        {
+            NativeBuildPipeline pipeline = new();
+            pipeline.InstallBuildToolsAsync(CancellationToken.None).GetAwaiter().GetResult();
+            WriteDiagnosticsOutput(
+                args,
+                $"Self-managed Windows build tools are ready; build {BuildId}." +
+                Environment.NewLine);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
+            return 1;
+        }
+    }
+
+    private static int RunPortableToolInstall(string[] args)
+    {
+        try
+        {
+            NativeBuildPipeline pipeline = new();
+            pipeline.InstallPortableToolsAsync(CancellationToken.None).GetAwaiter().GetResult();
+            WriteDiagnosticsOutput(
+                args,
+                $"Portable Windows build tools are ready; build {BuildId}." +
+                Environment.NewLine);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
+            return 1;
+        }
+    }
+
+    private static int RunCompilerSetupDownload(string[] args)
+    {
+        try
+        {
+            NativeBuildPipeline pipeline = new();
+            pipeline.DownloadCompilerSetupAsync(CancellationToken.None).GetAwaiter().GetResult();
+            WriteDiagnosticsOutput(
+                args,
+                $"Microsoft compiler setup download is verified; build {BuildId}." +
+                Environment.NewLine);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
+            return 1;
+        }
+    }
+
+    private static int RunToolchainSmokeTest(string[] args)
+    {
+        try
+        {
+            NativeBuildPipeline pipeline = new();
+            pipeline.RunToolchainSmokeTestAsync(CancellationToken.None)
+                .GetAwaiter().GetResult();
+            WriteDiagnosticsOutput(
+                args,
+                $"Managed Windows compiler smoke test passed; build {BuildId}." +
+                Environment.NewLine);
             return 0;
         }
         catch (Exception exception)
