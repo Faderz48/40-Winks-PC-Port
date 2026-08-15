@@ -43,7 +43,7 @@ jobs:
         shell: powershell
         run: >-
           .\packaging\windows\build_release.ps1
-          -Version "0.1.4-alpha"
+          -Version "0.1.5-alpha"
           -BuildId "${{ github.sha }}"
 
       - name: Verify embedded public payload

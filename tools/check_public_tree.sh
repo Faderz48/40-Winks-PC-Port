@@ -51,6 +51,11 @@ if git grep -n -I -E 'winget(\.exe)?' -- packaging/windows/launcher; then
     failed=1
 fi
 
+if [ "$(grep -Fc '#if defined(__clang__) && !_SDL_HAS_BUILTIN(_m_prefetch)' patches/SDL2.patch)" -ne 2 ]; then
+    echo "SDL2 Clang compatibility guards are missing." >&2
+    failed=1
+fi
+
 if [ "$failed" -ne 0 ]; then
     exit 1
 fi

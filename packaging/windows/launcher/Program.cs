@@ -237,6 +237,7 @@ internal static class Program
                 "packaging/windows/launcher/ManagedToolchain.cs",
                 "tools/generate_recomp_symbols.py",
                 "recomp/40winks.toml",
+                "patches/SDL2.patch",
             };
             foreach (string requiredEntry in required)
             {

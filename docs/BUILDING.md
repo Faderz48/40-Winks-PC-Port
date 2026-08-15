@@ -114,7 +114,7 @@ Both paths import the Visual Studio x64 environment, build with `clang-cl` and N
 The redistributable setup executable is built by the Windows GitHub Actions workflow or locally with PowerShell and the .NET 8 SDK:
 
 ```powershell
-packaging\windows\build_release.ps1 -Version "0.1.4-alpha" -BuildId "local"
+packaging\windows\build_release.ps1 -Version "0.1.5-alpha" -BuildId "local"
 ```
 
 It produces `dist\windows\40-Winks-PC-Port-Windows-x64.exe` and its SHA-256 file. This setup contains only the audited public source and first-run logic. The playable output generated from a ROM remains excluded from public releases.

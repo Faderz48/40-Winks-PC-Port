@@ -53,6 +53,7 @@ internal sealed class NativeBuildPipeline
     private string git = "git.exe";
     private string cmake = "cmake.exe";
     private string ninja = "ninja.exe";
+    private string clang = "clang-cl.exe";
     private PythonCommand? python;
 
     public event Action<int, string>? ProgressChanged;
@@ -150,7 +151,7 @@ internal sealed class NativeBuildPipeline
                     "-B", buildDirectory,
                     "-G", "Ninja",
                     "-DCMAKE_BUILD_TYPE=Release",
-                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    $"-DCMAKE_CXX_COMPILER={clang}",
                     $"-DCMAKE_MAKE_PROGRAM={ninja}",
                 },
                 sourceDirectory,
@@ -209,13 +210,24 @@ internal sealed class NativeBuildPipeline
             await ApplyPatchOnceAsync(
                 "N64ModernRuntime",
                 Path.Combine(sourceDirectory, "patches", "N64ModernRuntime.patch"),
-                externalDirectory,
+                Path.Combine(externalDirectory, "N64ModernRuntime"),
                 sourceDirectory,
                 cancellationToken);
             await ApplyPatchOnceAsync(
                 "rt64",
                 Path.Combine(sourceDirectory, "patches", "RT64.patch"),
-                externalDirectory,
+                Path.Combine(externalDirectory, "rt64"),
+                sourceDirectory,
+                cancellationToken);
+            await ApplyPatchOnceAsync(
+                "rt64 SDL2",
+                Path.Combine(sourceDirectory, "patches", "SDL2.patch"),
+                Path.Combine(
+                    externalDirectory,
+                    "rt64",
+                    "src",
+                    "contrib",
+                    "mupen64plus-win32-deps"),
                 sourceDirectory,
                 cancellationToken);
 
@@ -230,8 +242,8 @@ internal sealed class NativeBuildPipeline
                     "-B", n64RecompBuildDirectory,
                     "-G", "Ninja",
                     "-DCMAKE_BUILD_TYPE=Release",
-                    "-DCMAKE_C_COMPILER=clang-cl",
-                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    $"-DCMAKE_C_COMPILER={clang}",
+                    $"-DCMAKE_CXX_COMPILER={clang}",
                     $"-DCMAKE_MAKE_PROGRAM={ninja}",
                 },
                 sourceDirectory,
@@ -300,8 +312,8 @@ internal sealed class NativeBuildPipeline
                     "-B", buildDirectory,
                     "-G", "Ninja",
                     "-DCMAKE_BUILD_TYPE=Release",
-                    "-DCMAKE_C_COMPILER=clang-cl",
-                    "-DCMAKE_CXX_COMPILER=clang-cl",
+                    $"-DCMAKE_C_COMPILER={clang}",
+                    $"-DCMAKE_CXX_COMPILER={clang}",
                     $"-DCMAKE_MAKE_PROGRAM={ninja}",
                     "-DBUILD_TESTING=OFF",
                 },
@@ -379,7 +391,7 @@ internal sealed class NativeBuildPipeline
 
             bool compilerReady =
                 await ImportVisualStudioEnvironmentAsync(cancellationToken) &&
-                FindExecutable("clang-cl.exe") is not null;
+                VisualStudioClangIsAvailable();
             if (!compilerReady)
             {
                 Report(59, "Downloading Microsoft C++ compiler setup");
@@ -428,7 +440,7 @@ internal sealed class NativeBuildPipeline
                 ConfigureManagedTools(managedTools);
                 compilerReady =
                     await ImportVisualStudioEnvironmentAsync(cancellationToken) &&
-                    FindExecutable("clang-cl.exe") is not null;
+                    VisualStudioClangIsAvailable();
                 if (!compilerReady)
                 {
                     throw new InvalidOperationException(
@@ -562,7 +574,19 @@ internal sealed class NativeBuildPipeline
 
         if (hasVisualStudio)
         {
-            RequireExecutable("clang-cl.exe", "Clang compiler", missing);
+            if (!VisualStudioClangIsAvailable())
+            {
+                missing.Add("Visual Studio Clang compiler");
+            }
+            else
+            {
+                await ValidateManagedToolAsync(
+                    clang,
+                    new[] { "--version" },
+                    "Visual Studio Clang compiler",
+                    missing,
+                    cancellationToken);
+            }
         }
 
         if (missing.Count != 0)
@@ -611,6 +635,7 @@ internal sealed class NativeBuildPipeline
     private void LoadCurrentEnvironment()
     {
         environment.Clear();
+        clang = "clang-cl.exe";
         foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
         {
             if (entry.Key is string key && entry.Value is string value)
@@ -648,7 +673,9 @@ internal sealed class NativeBuildPipeline
             {
                 "-latest",
                 "-products", "*",
-                "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "Microsoft.VisualStudio.Component.VC.Llvm.Clang",
                 "-property", "installationPath",
             },
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -705,19 +732,28 @@ internal sealed class NativeBuildPipeline
                 environment[line[..separator]] = line[(separator + 1)..];
             }
         }
+
+        string[] clangCandidates =
+        {
+            Path.Combine(
+                installation, "VC", "Tools", "Llvm", "x64", "bin", "clang-cl.exe"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "LLVM",
+                "bin",
+                "clang-cl.exe"),
+        };
+        string? visualStudioClang = clangCandidates.FirstOrDefault(File.Exists);
+        if (visualStudioClang is not null)
+        {
+            clang = visualStudioClang;
+            PrependPath(Path.GetDirectoryName(clang)!);
+        }
         return true;
     }
 
-    private string RequireExecutable(string name, string displayName, List<string> missing)
-    {
-        string? executable = FindExecutable(name);
-        if (executable is null)
-        {
-            missing.Add(displayName);
-            return name;
-        }
-        return executable;
-    }
+    private bool VisualStudioClangIsAvailable() =>
+        Path.IsPathRooted(clang) && File.Exists(clang);
 
     private string? FindExecutable(string name)
     {
@@ -859,11 +895,10 @@ internal sealed class NativeBuildPipeline
     private async Task ApplyPatchOnceAsync(
         string name,
         string patchPath,
-        string externalDirectory,
+        string directory,
         string sourceDirectory,
         CancellationToken cancellationToken)
     {
-        string directory = Path.Combine(externalDirectory, name);
         ProcessResult alreadyApplied = await RunProcessAsync(
             git,
             new[] { "-C", directory, "apply", "--reverse", "--check", patchPath },
