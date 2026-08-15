@@ -13,10 +13,13 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <vector>
 
 #include "librecomp/rsp.hpp"
 #include "input_routing.hpp"
 #include "rt64_renderer.hpp"
+
+extern RspUcodeFunc aspMain;
 
 namespace forty_winks::platform {
 namespace {
@@ -59,7 +62,7 @@ struct InputState {
 
 InputState input;
 SDL_Window* window = nullptr;
-std::atomic<uint64_t> rsp_task_count = 0;
+std::atomic<uint64_t> audio_rsp_task_count = 0;
 std::atomic<bool> vi_seen = false;
 std::atomic<int> current_window_width = default_window_size.width;
 std::atomic<int> current_window_height = default_window_size.height;
@@ -68,6 +71,100 @@ std::atomic<int> pending_window_height = default_window_size.height;
 std::atomic<bool> window_resize_pending = false;
 std::filesystem::path window_settings_path;
 std::mutex window_settings_mutex;
+
+constexpr uint32_t default_audio_frequency = 48000;
+constexpr uint8_t audio_input_channels = 2;
+
+struct AudioState {
+    std::mutex mutex;
+    SDL_AudioDeviceID device = 0;
+    SDL_AudioSpec output_spec{};
+    SDL_AudioStream* conversion_stream = nullptr;
+    uint32_t input_frequency = default_audio_frequency;
+    bool playback_reported = false;
+    std::vector<int16_t> channel_swap_buffer;
+    std::vector<uint8_t> converted_buffer;
+};
+
+AudioState audio;
+
+bool rebuild_audio_stream_locked(uint32_t input_frequency) {
+    if (audio.conversion_stream != nullptr) {
+        SDL_FreeAudioStream(audio.conversion_stream);
+        audio.conversion_stream = nullptr;
+    }
+
+    audio.input_frequency = input_frequency;
+    if (audio.device == 0) {
+        return false;
+    }
+
+    audio.conversion_stream = SDL_NewAudioStream(
+        AUDIO_S16SYS,
+        audio_input_channels,
+        static_cast<int>(input_frequency),
+        audio.output_spec.format,
+        audio.output_spec.channels,
+        audio.output_spec.freq);
+    if (audio.conversion_stream == nullptr) {
+        std::fprintf(stderr, "Could not create audio converter: %s\n", SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+bool initialize_audio() {
+    std::lock_guard lock{audio.mutex};
+    SDL_AudioSpec desired{};
+    desired.freq = static_cast<int>(default_audio_frequency);
+    desired.format = AUDIO_S16SYS;
+    desired.channels = audio_input_channels;
+    desired.samples = 512;
+
+    audio.device = SDL_OpenAudioDevice(
+        nullptr,
+        0,
+        &desired,
+        &audio.output_spec,
+        SDL_AUDIO_ALLOW_FREQUENCY_CHANGE |
+            SDL_AUDIO_ALLOW_FORMAT_CHANGE |
+            SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
+    if (audio.device == 0) {
+        std::fprintf(stderr, "Audio output is unavailable: %s\n", SDL_GetError());
+        return false;
+    }
+
+    if (!rebuild_audio_stream_locked(default_audio_frequency)) {
+        SDL_CloseAudioDevice(audio.device);
+        audio.device = 0;
+        return false;
+    }
+
+    SDL_PauseAudioDevice(audio.device, 0);
+    std::printf("Audio output initialized: %d Hz, %u channels.\n",
+        audio.output_spec.freq,
+        static_cast<unsigned>(audio.output_spec.channels));
+    return true;
+}
+
+void shutdown_audio() {
+    std::lock_guard lock{audio.mutex};
+    if (audio.device != 0) {
+        SDL_PauseAudioDevice(audio.device, 1);
+        SDL_ClearQueuedAudio(audio.device);
+    }
+    if (audio.conversion_stream != nullptr) {
+        SDL_FreeAudioStream(audio.conversion_stream);
+        audio.conversion_stream = nullptr;
+    }
+    if (audio.device != 0) {
+        SDL_CloseAudioDevice(audio.device);
+        audio.device = 0;
+    }
+    audio.channel_swap_buffer.clear();
+    audio.converted_buffer.clear();
+    audio.playback_reported = false;
+}
 
 WindowSize load_saved_window_size(WindowSize fallback) {
     if (window_settings_path.empty()) {
@@ -218,6 +315,38 @@ void close_controllers() {
     }
 }
 
+bool confirm_exit() {
+    constexpr SDL_MessageBoxButtonData buttons[] = {
+        {
+            SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,
+            0,
+            "Keep Playing",
+        },
+        {
+            SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,
+            1,
+            "Exit Game",
+        },
+    };
+    const SDL_MessageBoxData message_box{
+        SDL_MESSAGEBOX_WARNING,
+        window,
+        "Exit 40 Winks?",
+        "Are you sure you want to exit the game?",
+        static_cast<int>(std::size(buttons)),
+        buttons,
+        nullptr,
+    };
+
+    int selected_button = -1;
+    if (SDL_ShowMessageBox(&message_box, &selected_button) < 0) {
+        std::fprintf(stderr, "Could not show the exit confirmation: %s\n", SDL_GetError());
+        return false;
+    }
+
+    return selected_button == 1;
+}
+
 uint16_t key_button(SDL_Keycode key) {
     switch (key) {
         case SDLK_SPACE: return n64_button::a;
@@ -365,8 +494,11 @@ void update_gfx(void*) {
         }
 
         if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
-                ultramodern::quit();
+            if (event.type == SDL_KEYDOWN && event.key.repeat == 0 &&
+                    event.key.keysym.sym == SDLK_ESCAPE) {
+                if (confirm_exit()) {
+                    ultramodern::quit();
+                }
                 continue;
             }
 
@@ -470,18 +602,126 @@ ultramodern::input::connected_device_info_t connected_device(int controller_num)
     return {ultramodern::input::Device::Controller, pak};
 }
 
-RspExitReason discard_rsp_task(uint8_t*, uint32_t) {
-    ++rsp_task_count;
-    return RspExitReason::Broke;
+RspExitReason run_audio_rsp_task(uint8_t* rdram, uint32_t ucode_address) {
+    ++audio_rsp_task_count;
+    return aspMain(rdram, ucode_address);
 }
 
-RspUcodeFunc* get_rsp_microcode(const OSTask*) {
-    return discard_rsp_task;
+RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
+    if (task->t.type == M_AUDTASK) {
+        return run_audio_rsp_task;
+    }
+
+    std::fprintf(stderr, "Unsupported non-graphics RSP task type: %u\n",
+        static_cast<unsigned>(task->t.type));
+    return nullptr;
 }
 
-void queue_samples(int16_t*, size_t) {}
-size_t frames_remaining() { return 0; }
-void set_frequency(uint32_t) {}
+void queue_samples(int16_t* samples, size_t sample_count) {
+    if (samples == nullptr || sample_count < audio_input_channels) {
+        return;
+    }
+
+    sample_count -= sample_count % audio_input_channels;
+    std::lock_guard lock{audio.mutex};
+    if (audio.device == 0 || audio.conversion_stream == nullptr) {
+        return;
+    }
+
+    audio.channel_swap_buffer.resize(sample_count);
+    for (size_t index = 0; index < sample_count; index += audio_input_channels) {
+        // Raw RDRAM halfwords expose the N64 stereo pair in reversed order.
+        audio.channel_swap_buffer[index] = samples[index + 1];
+        audio.channel_swap_buffer[index + 1] = samples[index];
+    }
+
+    const int input_bytes = static_cast<int>(sample_count * sizeof(int16_t));
+    if (SDL_AudioStreamPut(
+            audio.conversion_stream,
+            audio.channel_swap_buffer.data(),
+            input_bytes) != 0) {
+        std::fprintf(stderr, "Could not convert game audio: %s\n", SDL_GetError());
+        return;
+    }
+
+    const int available_bytes = SDL_AudioStreamAvailable(audio.conversion_stream);
+    if (available_bytes <= 0) {
+        return;
+    }
+    audio.converted_buffer.resize(static_cast<size_t>(available_bytes));
+    const int converted_bytes = SDL_AudioStreamGet(
+        audio.conversion_stream,
+        audio.converted_buffer.data(),
+        available_bytes);
+    if (converted_bytes <= 0) {
+        if (converted_bytes < 0) {
+            std::fprintf(stderr, "Could not read converted game audio: %s\n", SDL_GetError());
+        }
+        return;
+    }
+
+    if (SDL_QueueAudio(
+            audio.device,
+            audio.converted_buffer.data(),
+            static_cast<Uint32>(converted_bytes)) != 0) {
+        std::fprintf(stderr, "Could not queue game audio: %s\n", SDL_GetError());
+        return;
+    }
+
+    if (!audio.playback_reported) {
+        std::printf("Audio playback started: %u Hz stereo source.\n",
+            audio.input_frequency);
+        audio.playback_reported = true;
+    }
+}
+
+size_t frames_remaining() {
+    std::lock_guard lock{audio.mutex};
+    if (audio.device == 0 || audio.output_spec.freq <= 0 ||
+            audio.output_spec.channels == 0) {
+        return 0;
+    }
+
+    const size_t output_frame_bytes =
+        static_cast<size_t>(SDL_AUDIO_BITSIZE(audio.output_spec.format) / 8) *
+        audio.output_spec.channels;
+    if (output_frame_bytes == 0) {
+        return 0;
+    }
+
+    size_t output_bytes = SDL_GetQueuedAudioSize(audio.device);
+    if (audio.conversion_stream != nullptr) {
+        const int available_bytes = SDL_AudioStreamAvailable(audio.conversion_stream);
+        if (available_bytes > 0) {
+            output_bytes += static_cast<size_t>(available_bytes);
+        }
+    }
+
+    const size_t output_frames = output_bytes / output_frame_bytes;
+    return output_frames * audio.input_frequency /
+        static_cast<size_t>(audio.output_spec.freq);
+}
+
+void set_frequency(uint32_t frequency) {
+    if (frequency < 8000 || frequency > 192000) {
+        std::fprintf(stderr, "Ignoring invalid game audio frequency: %u Hz.\n",
+            frequency);
+        return;
+    }
+
+    std::lock_guard lock{audio.mutex};
+    if (audio.input_frequency == frequency) {
+        return;
+    }
+
+    if (audio.device != 0) {
+        SDL_ClearQueuedAudio(audio.device);
+    }
+    if (rebuild_audio_stream_locked(frequency)) {
+        audio.playback_reported = false;
+        std::printf("Game audio frequency: %u Hz.\n", frequency);
+    }
+}
 
 void on_vi() {
     vi_seen.store(true);
@@ -521,12 +761,15 @@ bool initialize(WindowSize requested_size,
     pending_window_width.store(requested_size.width);
     pending_window_height.store(requested_size.height);
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) {
+    if (SDL_Init(
+            SDL_INIT_VIDEO | SDL_INIT_AUDIO |
+            SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
 
     open_available_controllers();
+    initialize_audio();
     return true;
 }
 
@@ -560,6 +803,7 @@ InputAssignments input_assignments() {
 }
 
 void shutdown() {
+    shutdown_audio();
     close_controllers();
     if (window != nullptr) {
         SDL_DestroyWindow(window);
@@ -620,8 +864,8 @@ uint64_t discarded_display_lists() {
     return forty_winks::renderer::submitted_display_lists();
 }
 
-uint64_t discarded_rsp_tasks() {
-    return rsp_task_count.load();
+uint64_t processed_audio_rsp_tasks() {
+    return audio_rsp_task_count.load();
 }
 
 } // namespace forty_winks::platform

@@ -44,6 +44,16 @@ if(NOT EXISTS "${RECOMPILED_FUNCS_DIR}/funcs.h")
     )
 endif()
 
+set(RECOMPILED_RSP_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../recomp/generated/rsp/aspMain.cpp"
+)
+if(NOT EXISTS "${RECOMPILED_RSP_SOURCE}")
+    message(FATAL_ERROR
+        "Generated audio microcode was not found at ${RECOMPILED_RSP_SOURCE}. "
+        "Run 'make prepare ROM=/path/to/40-winks.z64' first."
+    )
+endif()
+
 if(WIN32)
     set(FORTY_WINKS_SDL2_DIR
         "${RT64_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3"
@@ -114,6 +124,7 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 add_executable(forty-winks-recomp
+    "${RECOMPILED_RSP_SOURCE}"
     src/debug_menu.cpp
     src/debug_support.cpp
     src/input_routing.cpp
@@ -123,6 +134,7 @@ add_executable(forty-winks-recomp
     src/recomp_support.cpp
     src/rt64_renderer.cpp
     src/split_screen_patch.cpp
+    src/visual_patches.cpp
 )
 
 target_include_directories(forty-winks-recomp PRIVATE
@@ -160,6 +172,16 @@ target_link_libraries(forty-winks-recomp PRIVATE
     SDL2::SDL2
     Threads::Threads
 )
+
+if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND
+        CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
+            CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+        target_compile_options(forty-winks-recomp PRIVATE /clang:-msse4.1)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(forty-winks-recomp PRIVATE -msse4.1)
+    endif()
+endif()
 
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     target_compile_options(forty-winks-recomp PRIVATE /W4)
@@ -246,6 +268,19 @@ if(BUILD_TESTING)
         target_compile_options(split-screen-patch-test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME split-screen-patch COMMAND split-screen-patch-test)
+
+    add_executable(visual-patches-test EXCLUDE_FROM_ALL
+        tests/visual_patches_test.cpp
+        src/visual_patches.cpp
+    )
+    target_include_directories(visual-patches-test PRIVATE
+        src
+        "${N64_MODERN_RUNTIME_DIR}/N64Recomp/include"
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(visual-patches-test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME visual-patches COMMAND visual-patches-test)
 endif()
 
 install(TARGETS forty-winks-recomp RUNTIME DESTINATION bin)

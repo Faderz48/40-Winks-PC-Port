@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXPECTED_SHA256="057232ef7618e25f5645df50d3cd45f08cb5a2cccb3e2fdf48faa8755c4ddb1a"
 ROM_PATH="${1:-}"
 N64RECOMP="$ROOT_DIR/work/external/N64Recomp/build/N64Recomp"
+RSPRECOMP="$ROOT_DIR/work/external/N64Recomp/build/RSPRecomp"
 
 if [ -z "$ROM_PATH" ]; then
     echo "Usage: $0 /path/to/clean-40-winks.z64" >&2
@@ -30,6 +31,11 @@ if [ ! -x "$N64RECOMP" ]; then
     exit 1
 fi
 
+if [ ! -x "$RSPRECOMP" ]; then
+    echo "RSPRecomp is not built. Run tools/bootstrap_dependencies.sh first." >&2
+    exit 1
+fi
+
 mkdir -p "$ROOT_DIR/recomp/generated"
 ln -sfn "$ROM_PATH" "$ROOT_DIR/recomp/baserom.z64"
 
@@ -38,5 +44,7 @@ python3 tools/generate_recomp_symbols.py "$ROM_PATH"
 
 cd "$ROOT_DIR/recomp"
 "$N64RECOMP" 40winks.toml
+mkdir -p generated/rsp
+"$RSPRECOMP" aspMain.toml
 
 echo "Generated local recompilation sources from the verified user ROM."

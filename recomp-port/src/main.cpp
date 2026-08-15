@@ -14,7 +14,9 @@
 #include "overlays.hpp"
 #include "platform.hpp"
 #include "recomp_support.h"
+#include "rt64_renderer.hpp"
 #include "split_screen_patch.hpp"
+#include "visual_patches.hpp"
 
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
 gpr get_entrypoint_address();
@@ -28,6 +30,9 @@ struct Options {
     std::filesystem::path data_path;
     forty_winks::platform::WindowSize window_size =
         forty_winks::platform::default_window_size;
+    forty_winks::renderer::DisplayAspectMode aspect_mode =
+        forty_winks::renderer::DisplayAspectMode::HybridWidescreen;
+    bool true_split_screen = true;
     bool resolution_explicit = false;
     unsigned smoke_seconds = 0;
 };
@@ -53,8 +58,28 @@ std::filesystem::path default_data_path() {
 void print_usage(const char* executable) {
     std::fprintf(stderr,
         "Usage: %s --rom <40-winks.z64> [--data-dir <path>] "
-        "[--resolution <width>x<height>] [--smoke-seconds <n>]\n",
+        "[--resolution <width>x<height>] "
+        "[--aspect <hybrid|original|stretch>] [--original-split-screen] "
+        "[--smoke-seconds <n>]\n",
         executable);
+}
+
+bool parse_aspect_mode(
+    std::string_view text,
+    forty_winks::renderer::DisplayAspectMode& mode) {
+    if (text == "hybrid") {
+        mode = forty_winks::renderer::DisplayAspectMode::HybridWidescreen;
+        return true;
+    }
+    if (text == "original" || text == "4:3") {
+        mode = forty_winks::renderer::DisplayAspectMode::Original4x3;
+        return true;
+    }
+    if (text == "stretch") {
+        mode = forty_winks::renderer::DisplayAspectMode::Stretch;
+        return true;
+    }
+    return false;
 }
 
 bool parse_resolution(std::string_view text,
@@ -115,6 +140,16 @@ bool parse_options(int argc, char** argv, Options& options) {
                 return false;
             }
             options.resolution_explicit = true;
+        } else if (argument == "--aspect" && index + 1 < argc) {
+            const char* aspect = argv[++index];
+            if (!parse_aspect_mode(aspect, options.aspect_mode)) {
+                std::fprintf(stderr,
+                    "Invalid aspect mode: %s (expected hybrid, original, or stretch)\n",
+                    aspect);
+                return false;
+            }
+        } else if (argument == "--original-split-screen") {
+            options.true_split_screen = false;
         } else if (argument == "--smoke-seconds" && index + 1 < argc) {
             options.smoke_seconds = static_cast<unsigned>(std::strtoul(argv[++index], nullptr, 10));
         } else if (argument == "--help" || argument == "-h") {
@@ -148,6 +183,16 @@ const char* validation_error(recomp::RomValidationError error) {
     return "unknown validation error";
 }
 
+void apply_game_startup_patches(uint8_t* rdram, recomp_context* context) {
+    forty_winks::patches::apply_startup_patches(rdram, context);
+    if (forty_winks::patches::apply_reduced_lightning_flash_patch(rdram)) {
+        std::printf("Reduced full-screen lightning flashes enabled.\n");
+    } else {
+        std::fprintf(stderr,
+            "Reduced lightning flash patch skipped: color table did not match.\n");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -167,6 +212,9 @@ int main(int argc, char** argv) {
 
     const std::string data_path_text = options.data_path.string();
     configure_controller_pak_storage(data_path_text.c_str());
+    forty_winks::renderer::set_display_aspect_mode(options.aspect_mode);
+    forty_winks::patches::set_true_split_screen_enabled(
+        options.true_split_screen);
 
     if (!forty_winks::platform::initialize(
             options.window_size,
@@ -197,7 +245,7 @@ int main(int argc, char** argv) {
         .is_enabled = true,
         .entrypoint_address = get_entrypoint_address(),
         .entrypoint = recomp_entrypoint,
-        .on_init_callback = forty_winks::patches::apply_startup_patches,
+        .on_init_callback = apply_game_startup_patches,
     };
 
     recomp::register_config_path(options.data_path);
@@ -263,9 +311,9 @@ int main(int argc, char** argv) {
 
     runtime_control.join();
 
-    std::printf("Runtime stopped after %llu display lists and %llu non-graphics RSP tasks.\n",
+    std::printf("Runtime stopped after %llu display lists and %llu audio RSP tasks.\n",
         static_cast<unsigned long long>(forty_winks::platform::discarded_display_lists()),
-        static_cast<unsigned long long>(forty_winks::platform::discarded_rsp_tasks()));
+        static_cast<unsigned long long>(forty_winks::platform::processed_audio_rsp_tasks()));
 
     forty_winks::platform::shutdown();
     return EXIT_SUCCESS;

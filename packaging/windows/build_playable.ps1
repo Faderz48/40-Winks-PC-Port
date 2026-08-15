@@ -276,12 +276,16 @@ Write-Stage 40 "Building CPU translator"
 Invoke-Native "cmake.exe" @(
     "--build", $N64RecompBuildDir,
     "--parallel", "$Jobs",
-    "--target", "N64RecompCLI"
+    "--target", "N64RecompCLI", "RSPRecomp"
 ) $RootDir 40 10 "Building CPU translator"
 
 $N64Recomp = Join-Path $N64RecompBuildDir "N64Recomp.exe"
+$RSPRecomp = Join-Path $N64RecompBuildDir "RSPRecomp.exe"
 if (-not (Test-Path -LiteralPath $N64Recomp)) {
     throw "N64Recomp did not produce $N64Recomp."
+}
+if (-not (Test-Path -LiteralPath $RSPRecomp)) {
+    throw "RSPRecomp did not produce $RSPRecomp."
 }
 
 $GeneratedDir = Join-Path $RootDir "recomp\generated"
@@ -310,6 +314,11 @@ Invoke-Native $script:Python.File $pythonArguments $RootDir
 Write-Stage 55 "Generating native game CPU"
 try {
     Invoke-Native $N64Recomp @("40winks.toml") (Join-Path $RootDir "recomp")
+
+    Write-Stage 58 "Generating native audio processor"
+    New-Item -ItemType Directory `
+        -Path (Join-Path $GeneratedDir "rsp") -Force | Out-Null
+    Invoke-Native $RSPRecomp @("aspMain.toml") (Join-Path $RootDir "recomp")
 }
 finally {
     if (Test-Path -LiteralPath $BaseRom) {

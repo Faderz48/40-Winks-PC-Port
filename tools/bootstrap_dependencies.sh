@@ -72,6 +72,6 @@ cmake -S "$EXTERNAL_DIR/N64Recomp" \
     -DCMAKE_BUILD_TYPE=Release
 cmake --build "$EXTERNAL_DIR/N64Recomp/build" \
     --parallel "$JOBS" \
-    --target N64RecompCLI
+    --target N64RecompCLI RSPRecomp
 
 echo "Pinned dependencies are ready."

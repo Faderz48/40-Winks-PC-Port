@@ -29,6 +29,11 @@
     <binary>forty-winks-port-launcher</binary>
   </provides>
   <releases>
+    <release version="0.1.7-alpha" date="2026-08-15" type="development">
+      <description>
+        <p>Adds native audio, improved widescreen effects, visual fixes, and exit confirmation.</p>
+      </description>
+    </release>
     <release version="0.1.2-alpha" date="2026-08-14" type="development">
       <description>
         <p>Adds the Windows self-building release path and native runtime portability fixes.</p>

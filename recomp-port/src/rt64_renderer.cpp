@@ -247,7 +247,7 @@ public:
         app_config.appId = "40-winks-pc-port";
         app_config.useConfigurationFile = false;
         app_config.forceAspectCorrectTransforms = true;
-        app_config.preserveRectangleAspect = true;
+        app_config.preserveRectangleAspect = false;
         app_config.cpuFramebufferAspectRatio = 4.0f / 3.0f;
         app_config.stretchFramebuffersToWindow = [] {
             return requested_display_aspect_mode.load() ==

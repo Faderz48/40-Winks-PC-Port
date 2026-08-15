@@ -42,6 +42,6 @@ ultramodern::error_handling::callbacks_t error_callbacks();
 
 bool first_vi_seen();
 uint64_t discarded_display_lists();
-uint64_t discarded_rsp_tasks();
+uint64_t processed_audio_rsp_tasks();
 
 } // namespace forty_winks::platform

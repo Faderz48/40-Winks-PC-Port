@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <fstream>
 #include <vector>
@@ -38,6 +39,8 @@ constexpr std::array<uint8_t, 32> true_split_screen_viewport_bytes{
     0x3F, 0x80, 0x00, 0x00, 0x3F, 0x00, 0x00, 0x00,
 };
 
+std::atomic<bool> true_split_screen_enabled{true};
+
 bool rdram_viewports_match(
         uint8_t* rdram,
         const std::array<uint32_t, 8>& expected) {
@@ -47,6 +50,24 @@ bool rdram_viewports_match(
         if (actual != expected[index]) {
             return false;
         }
+    }
+    return true;
+}
+
+bool apply_viewport_layout(
+        uint8_t* rdram,
+        const std::array<uint32_t, 8>& layout) {
+    if (rdram == nullptr) {
+        return false;
+    }
+    if (!rdram_viewports_match(rdram, original_viewports) &&
+        !rdram_viewports_match(rdram, true_split_screen_viewports)) {
+        return false;
+    }
+
+    for (size_t index = 0; index < layout.size(); ++index) {
+        MEM_W(index * sizeof(uint32_t), S32(viewport_rdram_address)) =
+            static_cast<int32_t>(layout[index]);
     }
     return true;
 }
@@ -86,31 +107,30 @@ bool rom_uses_true_split_screen_patch(const std::filesystem::path& rom_path) {
     return rom_data_uses_true_split_screen_patch(prefix);
 }
 
+void set_true_split_screen_enabled(bool enabled) {
+    true_split_screen_enabled.store(enabled);
+}
+
 bool apply_true_split_screen_patch(uint8_t* rdram) {
-    if (rdram == nullptr) {
-        return false;
-    }
-
-    if (!rdram_viewports_match(rdram, original_viewports) &&
-        !rdram_viewports_match(rdram, true_split_screen_viewports)) {
-        return false;
-    }
-
-    for (size_t index = 0; index < true_split_screen_viewports.size(); ++index) {
-        MEM_W(index * sizeof(uint32_t), S32(viewport_rdram_address)) =
-            static_cast<int32_t>(true_split_screen_viewports[index]);
-    }
-    return true;
+    return apply_viewport_layout(rdram, true_split_screen_viewports);
 }
 
 void apply_startup_patches(uint8_t* rdram, recomp_context* context) {
     (void)context;
-    if (apply_true_split_screen_patch(rdram)) {
+    const bool use_true_split_screen = true_split_screen_enabled.load();
+    const bool applied = apply_viewport_layout(
+        rdram,
+        use_true_split_screen
+            ? true_split_screen_viewports
+            : original_viewports);
+    if (applied && use_true_split_screen) {
         std::printf(
             "True split-screen enabled: Player 1 top, Player 2 bottom (Faderz48 layout).\n");
+    } else if (applied) {
+        std::printf("Original side-by-side split-screen enabled.\n");
     } else {
         std::fprintf(stderr,
-            "True split-screen patch skipped: viewport table did not match the supported ROM.\n");
+            "Split-screen layout skipped: viewport table did not match the supported ROM.\n");
     }
 }
 

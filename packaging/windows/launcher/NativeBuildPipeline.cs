@@ -320,7 +320,7 @@ internal sealed class NativeBuildPipeline
                 {
                     "--build", n64RecompBuildDirectory,
                     "--parallel", jobs.ToString(),
-                    "--target", "N64RecompCLI",
+                    "--target", "N64RecompCLI", "RSPRecomp",
                 },
                 sourceDirectory,
                 cancellationToken,
@@ -329,10 +329,16 @@ internal sealed class NativeBuildPipeline
                 "Building CPU translator");
 
             string n64Recomp = Path.Combine(n64RecompBuildDirectory, "N64Recomp.exe");
+            string rspRecomp = Path.Combine(n64RecompBuildDirectory, "RSPRecomp.exe");
             if (!File.Exists(n64Recomp))
             {
                 throw new InvalidOperationException(
                     $"N64Recomp did not produce the expected program at {n64Recomp}.");
+            }
+            if (!File.Exists(rspRecomp))
+            {
+                throw new InvalidOperationException(
+                    $"RSPRecomp did not produce the expected program at {rspRecomp}.");
             }
 
             string generatedDirectory = Path.Combine(sourceDirectory, "recomp", "generated");
@@ -359,6 +365,14 @@ internal sealed class NativeBuildPipeline
                 await RunRequiredAsync(
                     n64Recomp,
                     new[] { "40winks.toml" },
+                    Path.Combine(sourceDirectory, "recomp"),
+                    cancellationToken);
+
+                Report(58, "Generating native audio processor");
+                Directory.CreateDirectory(Path.Combine(generatedDirectory, "rsp"));
+                await RunRequiredAsync(
+                    rspRecomp,
+                    new[] { "aspMain.toml" },
                     Path.Combine(sourceDirectory, "recomp"),
                     cancellationToken);
             }

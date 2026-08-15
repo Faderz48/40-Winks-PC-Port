@@ -39,7 +39,7 @@ jobs:
         shell: powershell
         run: >-
           .\packaging\windows\build_release.ps1
-          -Version "0.1.6-alpha"
+          -Version "0.1.7-alpha"
           -BuildId "${{ github.sha }}"
 
       - name: Verify embedded public payload
@@ -88,6 +88,17 @@ jobs:
               throw "Native Windows build-tool discovery failed."
           }
           Get-Content $result
+
+      - name: Verify audio translation is included in first-launch builds
+        shell: powershell
+        run: |
+          $pipeline = Get-Content `
+              .\packaging\windows\launcher\NativeBuildPipeline.cs `
+              -Raw
+          if ($pipeline -notmatch '"RSPRecomp"' -or
+              $pipeline -notmatch '"aspMain\.toml"') {
+              throw "The Windows first-launch pipeline is missing audio translation."
+          }
 
       - name: Compile and run with managed toolchain
         timeout-minutes: 5

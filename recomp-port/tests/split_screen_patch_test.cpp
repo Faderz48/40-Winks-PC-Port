@@ -67,6 +67,13 @@ int main() {
         forty_winks::patches::apply_true_split_screen_patch(rdram),
         "applying the patch twice should be safe");
 
+    forty_winks::patches::set_true_split_screen_enabled(false);
+    forty_winks::patches::apply_startup_patches(rdram, nullptr);
+    passed &= expect(
+        viewports_equal(rdram, original_viewports),
+        "the original layout option should restore side-by-side viewports");
+    forty_winks::patches::set_true_split_screen_enabled(true);
+
     std::vector<uint8_t> patched_rom(viewport_rom_offset + 32);
     patched_rom[0] = 0x80;
     patched_rom[1] = 0x37;

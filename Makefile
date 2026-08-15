@@ -22,7 +22,8 @@ run: build
 
 test: build
 	cmake --build "$(BUILD_DIR)" --parallel "$(JOBS)" --target \
-		controller-pak-test debug-level-test input-routing-test split-screen-patch-test
+		controller-pak-test debug-level-test input-routing-test split-screen-patch-test \
+		visual-patches-test
 	ctest --test-dir "$(BUILD_DIR)" --output-on-failure
 
 playable-appimage: prepare

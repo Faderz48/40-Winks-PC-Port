@@ -1,0 +1,17 @@
+# 40 Winks uses Nintendo's standard aspMain audio microcode. The generated
+# source is ROM-derived and remains ignored by version control.
+text_offset = 0x823F0
+text_size = 0xE20
+text_address = 0x04001080
+rom_file_path = "baserom.z64"
+output_file_path = "generated/rsp/aspMain.cpp"
+output_function_name = "aspMain"
+
+# The command jump table is stored at offset 0x10 in the microcode data block.
+extra_indirect_branch_targets = [
+    0x10C0, 0x1130,
+    0x1118, 0x1470, 0x11DC, 0x1B38,
+    0x1214, 0x187C, 0x1254, 0x12D0,
+    0x12EC, 0x1328, 0x140C, 0x1294,
+    0x1E24, 0x138C, 0x170C, 0x144C,
+]

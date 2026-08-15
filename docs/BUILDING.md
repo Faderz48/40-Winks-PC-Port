@@ -41,7 +41,7 @@ The build performs these local-only steps:
 
 1. Verifies the supplied ROM hash.
 2. Creates an ignored `recomp/baserom.z64` symlink to it.
-3. Generates the symbol map and N64Recomp C output under ignored `recomp/generated/`.
+3. Generates the CPU translation and audio microcode translation under ignored `recomp/generated/`.
 4. Builds the native executable under ignored `build/`.
 
 Nothing copies the ROM into the repository or package.
@@ -119,7 +119,7 @@ The downloadable setup can run the same private pipeline without opening its win
 The redistributable setup executable is built by the Windows GitHub Actions workflow or locally with PowerShell and the .NET 8 SDK:
 
 ```powershell
-packaging\windows\build_release.ps1 -Version "0.1.6-alpha" -BuildId "local"
+packaging\windows\build_release.ps1 -Version "0.1.7-alpha" -BuildId "local"
 ```
 
 It produces `dist\windows\40-Winks-PC-Port-Windows-x64.exe` and its SHA-256 file. This setup contains only the audited public source and first-run logic. The playable output generated from a ROM remains excluded from public releases.
