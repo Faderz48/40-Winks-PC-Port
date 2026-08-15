@@ -60,31 +60,40 @@ jobs:
           }
           Get-Content $result
 
-      - name: Verify native build-tool discovery
+      - name: Verify portable tool installation
+        timeout-minutes: 10
         shell: powershell
         run: |
-          $portableResult = Join-Path $env:RUNNER_TEMP "windows-portable-tools.txt"
-          $portableProcess = Start-Process `
+          $result = Join-Path $env:RUNNER_TEMP "windows-portable-tools.txt"
+          $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
-              -ArgumentList @("--install-portable-tools", "--diagnostics-output", "`"$portableResult`"") `
+              -ArgumentList @("--install-portable-tools", "--diagnostics-output", "`"$result`"") `
               -Wait -PassThru
-          if ($portableProcess.ExitCode -ne 0) {
-              if (Test-Path $portableResult) { Get-Content $portableResult }
+          if ($process.ExitCode -ne 0) {
+              if (Test-Path $result) { Get-Content $result }
               throw "Self-managed Windows tool download failed."
           }
-          Get-Content $portableResult
+          Get-Content $result
 
-          $compilerResult = Join-Path $env:RUNNER_TEMP "windows-compiler-download.txt"
-          $compilerProcess = Start-Process `
+      - name: Verify compiler setup download
+        timeout-minutes: 5
+        shell: powershell
+        run: |
+          $result = Join-Path $env:RUNNER_TEMP "windows-compiler-download.txt"
+          $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
-              -ArgumentList @("--download-compiler-setup", "--diagnostics-output", "`"$compilerResult`"") `
+              -ArgumentList @("--download-compiler-setup", "--diagnostics-output", "`"$result`"") `
               -Wait -PassThru
-          if ($compilerProcess.ExitCode -ne 0) {
-              if (Test-Path $compilerResult) { Get-Content $compilerResult }
+          if ($process.ExitCode -ne 0) {
+              if (Test-Path $result) { Get-Content $result }
               throw "Microsoft compiler setup download failed."
           }
-          Get-Content $compilerResult
+          Get-Content $result
 
+      - name: Verify native build-tool discovery
+        timeout-minutes: 5
+        shell: powershell
+        run: |
           $result = Join-Path $env:RUNNER_TEMP "windows-requirements-diagnostics.txt"
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
@@ -96,16 +105,20 @@ jobs:
           }
           Get-Content $result
 
-          $smokeResult = Join-Path $env:RUNNER_TEMP "windows-toolchain-smoke-test.txt"
-          $smokeProcess = Start-Process `
+      - name: Compile and run with managed toolchain
+        timeout-minutes: 5
+        shell: powershell
+        run: |
+          $result = Join-Path $env:RUNNER_TEMP "windows-toolchain-smoke-test.txt"
+          $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
-              -ArgumentList @("--toolchain-smoke-test", "--diagnostics-output", "`"$smokeResult`"") `
+              -ArgumentList @("--toolchain-smoke-test", "--diagnostics-output", "`"$result`"") `
               -Wait -PassThru
-          if ($smokeProcess.ExitCode -ne 0) {
-              if (Test-Path $smokeResult) { Get-Content $smokeResult }
+          if ($process.ExitCode -ne 0) {
+              if (Test-Path $result) { Get-Content $result }
               throw "Managed Windows compiler smoke test failed."
           }
-          Get-Content $smokeResult
+          Get-Content $result
 
       - name: Upload Windows setup
         uses: actions/upload-artifact@v4
