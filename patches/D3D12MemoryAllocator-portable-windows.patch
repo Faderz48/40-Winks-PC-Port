@@ -1,0 +1,26 @@
+diff --git a/src/Common.h b/src/Common.h
+index 384c1a6..ac12e1e 100644
+--- a/src/Common.h
++++ b/src/Common.h
+@@ -28,7 +28,7 @@
+ #include <dxgi1_4.h>
+ #include <d3d12.h>
+ 
+-#include <Windows.h>
++#include <windows.h>
+ #include <wrl/client.h>
+ 
+ #include <iostream>
+diff --git a/src/D3D12MemAlloc.cpp b/src/D3D12MemAlloc.cpp
+index 6e93839..50fea66 100644
+--- a/src/D3D12MemAlloc.cpp
++++ b/src/D3D12MemAlloc.cpp
+@@ -34,7 +34,7 @@
+ #endif
+ 
+ // Includes needed for MinGW - see #71.
+-#ifndef _MSC_VER
++#if !defined(_MSC_VER) && !defined(__MINGW32__)
+     #include <guiddef.h>
+     // guiddef.h must be included first.
+     #include <dxguids.h>

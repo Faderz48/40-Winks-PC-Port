@@ -305,8 +305,8 @@ internal sealed class SetupForm : Form
             DialogResult choice = MessageBox.Show(
                 this,
                 $"Setup needs these build tools:\n\n{string.Join(", ", exception.Tools)}\n\n" +
-                "The app will download and manage them itself. Microsoft's compiler " +
-                "is a large download and will request Windows administrator approval.\n\nContinue?",
+                "The app will download and manage them in its private folder. " +
+                "No administrator approval or system installation is needed.\n\nContinue?",
                 "40 Winks PC Port",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Information);
@@ -348,10 +348,10 @@ internal sealed class SetupForm : Form
             SetBusy(true);
             activeOperation = operation;
             progressBar.Value = 1;
-            statusLabel.Text = "Installing Windows build tools";
+            statusLabel.Text = "Preparing private build tools";
             await buildPipeline.InstallBuildToolsAsync(operation.Token);
 
-            statusLabel.Text = "Build tools installed";
+            statusLabel.Text = "Private build tools ready";
             toolsInstalled = true;
         }
         catch (OperationCanceledException)

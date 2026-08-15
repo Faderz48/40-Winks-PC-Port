@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.1.5-alpha",
+    [string]$Version = "0.1.6-alpha",
     [string]$BuildId = "dev"
 )
 
@@ -23,7 +23,8 @@ if (Test-Path -LiteralPath $BuildDir) {
 }
 New-Item -ItemType Directory -Path $BuildDir, $DistDir -Force | Out-Null
 
-& git.exe -C $RootDir archive --format=zip --output=$Payload HEAD
+& git.exe -C $RootDir archive --format=zip --output=$Payload HEAD -- `
+    . ':(exclude)packaging/windows/build_release.ps1'
 if ($LASTEXITCODE -ne 0) {
     throw "Could not create the public source payload from the current commit."
 }

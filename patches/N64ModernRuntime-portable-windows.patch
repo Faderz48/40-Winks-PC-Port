@@ -1,0 +1,97 @@
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+index ff40212..851e5a8 100644
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -92,7 +92,7 @@ overloaded(Ts...) -> overloaded<Ts...>;
+ 
+ #if defined(_WIN32)
+ #   define WIN32_LEAN_AND_MEAN
+-#   include "Windows.h"
++#   include <windows.h>
+ 
+ class recomp::mods::DynamicLibrary {
+ public:
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+index ea17675..d07edff 100644
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -27,7 +27,7 @@
+ 
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+-#    include <Windows.h>
++#    include <windows.h>
+ #else
+ #    include <sys/mman.h>
+ #endif
+diff --git a/ultramodern/include/ultramodern/renderer_context.hpp b/ultramodern/include/ultramodern/renderer_context.hpp
+index 43032ea..3b5f329 100644
+--- a/ultramodern/include/ultramodern/renderer_context.hpp
++++ b/ultramodern/include/ultramodern/renderer_context.hpp
+@@ -8,7 +8,7 @@
+ 
+ #if defined(_WIN32)
+ #   define WIN32_LEAN_AND_MEAN
+-#   include <Windows.h>
++#   include <windows.h>
+ #elif defined(__ANDROID__)
+ #   include "android/native_window.h"
+ #elif defined(__linux__)
+diff --git a/ultramodern/include/ultramodern/ultra64.h b/ultramodern/include/ultramodern/ultra64.h
+index 31eb106..4dfd0c8 100644
+--- a/ultramodern/include/ultramodern/ultra64.h
++++ b/ultramodern/include/ultramodern/ultra64.h
+@@ -47,7 +47,7 @@ typedef uint8_t u8;
+ #endif
+ 
+ #ifndef NULL
+-#define NULL (PTR(void) 0)
++#define NULL 0
+ #endif
+ 
+ #define OS_MESG_NOBLOCK     0
+diff --git a/ultramodern/src/task_win32.cpp b/ultramodern/src/task_win32.cpp
+index bacbf01..37e626a 100644
+--- a/ultramodern/src/task_win32.cpp
++++ b/ultramodern/src/task_win32.cpp
+@@ -1,6 +1,6 @@
+ #ifdef _WIN32
+ 
+-#include <Windows.h>
++#include <windows.h>
+ 
+ #include "ultramodern/ultra64.h"
+ #include "ultramodern/ultramodern.hpp"
+@@ -10,4 +10,4 @@ extern "C" unsigned int sleep(unsigned int seconds) {
+     return 0;
+ }
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index 6e3ed18..393d767 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -11,7 +11,7 @@
+ 
+ // Native APIs only used to set thread names for easier debugging
+ #ifdef _WIN32
+-#include <Windows.h>
++#include <windows.h>
+ #endif
+ 
+ static ultramodern::threads::callbacks_t threads_callbacks;
+diff --git a/ultramodern/src/timer.cpp b/ultramodern/src/timer.cpp
+index ee26c45..3ada60c 100644
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -8,7 +8,7 @@
+ 
+ #ifdef _WIN32
+ #define WIN32_LEAN_AND_MEAN
+-#include "Windows.h"
++#include <windows.h>
+ #endif
+ 
+ // Start time for the program

@@ -1,5 +1,4 @@
 using System.Collections;
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -53,7 +52,11 @@ internal sealed class NativeBuildPipeline
     private string git = "git.exe";
     private string cmake = "cmake.exe";
     private string ninja = "ninja.exe";
-    private string clang = "clang-cl.exe";
+    private string cCompiler = "x86_64-w64-mingw32-clang.exe";
+    private string cxxCompiler = "x86_64-w64-mingw32-clang++.exe";
+    private string resourceCompiler = "x86_64-w64-mingw32-windres.exe";
+    private string archiver = "llvm-ar.exe";
+    private string ranlib = "llvm-ranlib.exe";
     private PythonCommand? python;
 
     public event Action<int, string>? ProgressChanged;
@@ -97,22 +100,6 @@ internal sealed class NativeBuildPipeline
         }
     }
 
-    public async Task DownloadCompilerSetupAsync(CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Program.LogPath)!);
-        using StreamWriter downloadLog = new(Program.LogPath, true, new UTF8Encoding(false));
-        log = downloadLog;
-        try
-        {
-            await managedToolchain.DownloadCompilerBootstrapperAsync(cancellationToken);
-            Report(100, "Microsoft compiler setup verified");
-        }
-        finally
-        {
-            log = null;
-        }
-    }
-
     public async Task RunToolchainSmokeTestAsync(CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Program.LogPath)!);
@@ -129,31 +116,69 @@ internal sealed class NativeBuildPipeline
                 Path.Combine(sourceDirectory, "CMakeLists.txt"),
                 """
                 cmake_minimum_required(VERSION 3.20)
-                project(forty_winks_toolchain_test LANGUAGES CXX)
-                add_executable(forty-winks-toolchain-test main.cpp)
+                project(forty_winks_toolchain_test LANGUAGES C CXX RC)
+                add_library(forty-winks-toolchain-c STATIC smoke.c)
+                add_executable(forty-winks-toolchain-test main.cpp resource.rc)
+                target_link_libraries(forty-winks-toolchain-test PRIVATE
+                    forty-winks-toolchain-c d3d12 dxgi dxguid)
+                if(MINGW)
+                    target_link_options(forty-winks-toolchain-test PRIVATE -static)
+                endif()
                 """ + Environment.NewLine,
+                Encoding.ASCII);
+            File.WriteAllText(
+                Path.Combine(sourceDirectory, "smoke.c"),
+                "int forty_winks_smoke_c(void) { return 40; }" + Environment.NewLine,
                 Encoding.ASCII);
             File.WriteAllText(
                 Path.Combine(sourceDirectory, "main.cpp"),
                 """
                 #include <windows.h>
+                #include <d3d12.h>
+                #include <dxgi1_6.h>
+
+                extern "C" int forty_winks_smoke_c(void);
+
                 int main() {
-                    return IsProcessorFeaturePresent(PF_COMPARE_EXCHANGE_DOUBLE) ? 0 : 0;
+                    IDXGIFactory1* factory = nullptr;
+                    if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+                        factory->Release();
+                    }
+                    return forty_winks_smoke_c() == 40 ? 0 : 1;
                 }
                 """ + Environment.NewLine,
                 Encoding.ASCII);
+            File.WriteAllText(
+                Path.Combine(sourceDirectory, "resource.rc"),
+                """
+                1 VERSIONINFO
+                FILEVERSION 1,0,0,0
+                PRODUCTVERSION 1,0,0,0
+                FILEOS 0x40004
+                FILETYPE 0x1
+                BEGIN
+                    BLOCK "StringFileInfo"
+                    BEGIN
+                        BLOCK "040904b0"
+                        BEGIN
+                            VALUE "ProductName", "40 Winks toolchain test"
+                        END
+                    END
+                END
+                """ + Environment.NewLine,
+                Encoding.ASCII);
 
+            List<string> configureArguments = new()
+            {
+                "-S", sourceDirectory,
+                "-B", buildDirectory,
+                "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+            };
+            configureArguments.AddRange(PortableCMakeArguments());
             await RunRequiredAsync(
                 cmake,
-                new[]
-                {
-                    "-S", sourceDirectory,
-                    "-B", buildDirectory,
-                    "-G", "Ninja",
-                    "-DCMAKE_BUILD_TYPE=Release",
-                    $"-DCMAKE_CXX_COMPILER={clang}",
-                    $"-DCMAKE_MAKE_PROGRAM={ninja}",
-                },
+                configureArguments,
                 sourceDirectory,
                 cancellationToken);
             await RunRequiredAsync(
@@ -195,8 +220,10 @@ internal sealed class NativeBuildPipeline
             await FindBuildRequirementsAsync(cancellationToken);
 
             string externalDirectory = Path.Combine(sourceDirectory, "work", "external");
-            string buildDirectory = Path.Combine(sourceDirectory, "build", "windows-release");
-            string installDirectory = Path.Combine(sourceDirectory, "build", "windows-install");
+            string buildDirectory = Path.Combine(
+                sourceDirectory, "build", "windows-portable-v2-release");
+            string installDirectory = Path.Combine(
+                sourceDirectory, "build", "windows-portable-v2-install");
             Directory.CreateDirectory(externalDirectory);
 
             await CheckoutDependencyAsync(
@@ -214,8 +241,23 @@ internal sealed class NativeBuildPipeline
                 sourceDirectory,
                 cancellationToken);
             await ApplyPatchOnceAsync(
+                "N64ModernRuntime portable Windows",
+                Path.Combine(
+                    sourceDirectory,
+                    "patches",
+                    "N64ModernRuntime-portable-windows.patch"),
+                Path.Combine(externalDirectory, "N64ModernRuntime"),
+                sourceDirectory,
+                cancellationToken);
+            await ApplyPatchOnceAsync(
                 "rt64",
                 Path.Combine(sourceDirectory, "patches", "RT64.patch"),
+                Path.Combine(externalDirectory, "rt64"),
+                sourceDirectory,
+                cancellationToken);
+            await ApplyPatchOnceAsync(
+                "rt64 portable Windows",
+                Path.Combine(sourceDirectory, "patches", "RT64-portable-windows.patch"),
                 Path.Combine(externalDirectory, "rt64"),
                 sourceDirectory,
                 cancellationToken);
@@ -230,22 +272,44 @@ internal sealed class NativeBuildPipeline
                     "mupen64plus-win32-deps"),
                 sourceDirectory,
                 cancellationToken);
+            await ApplyPatchOnceAsync(
+                "rt64 Plume portable Windows",
+                Path.Combine(sourceDirectory, "patches", "Plume-portable-windows.patch"),
+                Path.Combine(externalDirectory, "rt64", "src", "contrib", "plume"),
+                sourceDirectory,
+                cancellationToken);
+            await ApplyPatchOnceAsync(
+                "rt64 D3D12 allocator portable Windows",
+                Path.Combine(
+                    sourceDirectory,
+                    "patches",
+                    "D3D12MemoryAllocator-portable-windows.patch"),
+                Path.Combine(
+                    externalDirectory,
+                    "rt64",
+                    "src",
+                    "contrib",
+                    "plume",
+                    "contrib",
+                    "D3D12MemoryAllocator"),
+                sourceDirectory,
+                cancellationToken);
 
             string n64RecompDirectory = Path.Combine(externalDirectory, "N64Recomp");
-            string n64RecompBuildDirectory = Path.Combine(n64RecompDirectory, "build-windows");
+            string n64RecompBuildDirectory = Path.Combine(
+                n64RecompDirectory, "build-windows-portable-v2");
             Report(35, "Configuring CPU translator");
+            List<string> n64RecompConfigureArguments = new()
+            {
+                "-S", n64RecompDirectory,
+                "-B", n64RecompBuildDirectory,
+                "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+            };
+            n64RecompConfigureArguments.AddRange(PortableCMakeArguments());
             await RunRequiredAsync(
                 cmake,
-                new[]
-                {
-                    "-S", n64RecompDirectory,
-                    "-B", n64RecompBuildDirectory,
-                    "-G", "Ninja",
-                    "-DCMAKE_BUILD_TYPE=Release",
-                    $"-DCMAKE_C_COMPILER={clang}",
-                    $"-DCMAKE_CXX_COMPILER={clang}",
-                    $"-DCMAKE_MAKE_PROGRAM={ninja}",
-                },
+                n64RecompConfigureArguments,
                 sourceDirectory,
                 cancellationToken);
 
@@ -304,19 +368,18 @@ internal sealed class NativeBuildPipeline
             }
 
             Report(60, "Configuring playable game");
+            List<string> gameConfigureArguments = new()
+            {
+                "-S", Path.Combine(sourceDirectory, "recomp-port"),
+                "-B", buildDirectory,
+                "-G", "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DBUILD_TESTING=OFF",
+            };
+            gameConfigureArguments.AddRange(PortableCMakeArguments());
             await RunRequiredAsync(
                 cmake,
-                new[]
-                {
-                    "-S", Path.Combine(sourceDirectory, "recomp-port"),
-                    "-B", buildDirectory,
-                    "-G", "Ninja",
-                    "-DCMAKE_BUILD_TYPE=Release",
-                    $"-DCMAKE_C_COMPILER={clang}",
-                    $"-DCMAKE_CXX_COMPILER={clang}",
-                    $"-DCMAKE_MAKE_PROGRAM={ninja}",
-                    "-DBUILD_TESTING=OFF",
-                },
+                gameConfigureArguments,
                 sourceDirectory,
                 cancellationToken);
 
@@ -384,132 +447,14 @@ internal sealed class NativeBuildPipeline
         log = installLog;
         try
         {
-            ManagedToolPaths managedTools =
-                await managedToolchain.InstallPortableToolsAsync(cancellationToken);
-            LoadCurrentEnvironment();
-            ConfigureManagedTools(managedTools);
-
-            bool compilerReady =
-                await ImportVisualStudioEnvironmentAsync(cancellationToken) &&
-                VisualStudioClangIsAvailable();
-            if (!compilerReady)
-            {
-                Report(59, "Downloading Microsoft C++ compiler setup");
-                string bootstrapper = await managedToolchain
-                    .DownloadCompilerBootstrapperAsync(cancellationToken);
-                Report(66, "Installing Microsoft C++ compiler");
-                int exitCode;
-                try
-                {
-                    exitCode = await RunElevatedProcessAsync(
-                        bootstrapper,
-                        new[]
-                        {
-                            "--quiet",
-                            "--wait",
-                            "--norestart",
-                            "--nocache",
-                            "--add", "Microsoft.VisualStudio.Workload.VCTools",
-                            "--add", "Microsoft.VisualStudio.Component.VC.Llvm.Clang",
-                            "--includeRecommended",
-                        },
-                        cancellationToken);
-                }
-                catch (Win32Exception exception) when (exception.NativeErrorCode == 1223)
-                {
-                    throw new InvalidOperationException(
-                        "Microsoft's compiler setup needs administrator approval. " +
-                        "Run the setup again and approve the Windows permission prompt.",
-                        exception);
-                }
-
-                if (exitCode == 3010)
-                {
-                    throw new InvalidOperationException(
-                        "Microsoft's compiler finished installing and Windows needs to restart. " +
-                        "Restart Windows, then run this setup again.");
-                }
-                if (exitCode != 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Microsoft's compiler setup stopped with exit code {exitCode}.");
-                }
-
-                Report(94, "Checking Microsoft C++ compiler");
-                LoadCurrentEnvironment();
-                ConfigureManagedTools(managedTools);
-                compilerReady =
-                    await ImportVisualStudioEnvironmentAsync(cancellationToken) &&
-                    VisualStudioClangIsAvailable();
-                if (!compilerReady)
-                {
-                    throw new InvalidOperationException(
-                        "Microsoft's compiler setup completed, but the C++ and Clang tools " +
-                        "were not found. Restart Windows and run this setup again.");
-                }
-            }
-
-            Report(100, "Build tools ready");
+            await managedToolchain.InstallPortableToolsAsync(cancellationToken);
+            Report(96, "Checking private portable toolchain");
+            await FindBuildRequirementsAsync(cancellationToken);
+            Report(100, "Private portable build tools ready");
         }
         finally
         {
             log = null;
-        }
-    }
-
-    private async Task<int> RunElevatedProcessAsync(
-        string fileName,
-        IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        ProcessStartInfo startInfo = new(fileName)
-        {
-            WorkingDirectory = Path.GetDirectoryName(fileName)!,
-            UseShellExecute = true,
-            Verb = "runas",
-        };
-        foreach (string argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-        WriteLog($"> {Path.GetFileName(fileName)} {FormatArguments(arguments)}");
-
-        using Process process = new() { StartInfo = startInfo };
-        process.Start();
-        lock (processLock)
-        {
-            activeProcess = process;
-        }
-        try
-        {
-            try
-            {
-                await process.WaitForExitAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                try
-                {
-                    process.Kill(true);
-                }
-                catch
-                {
-                    // Windows may deny terminating an elevated installer.
-                }
-                throw;
-            }
-            return process.ExitCode;
-        }
-        finally
-        {
-            lock (processLock)
-            {
-                if (ReferenceEquals(activeProcess, process))
-                {
-                    activeProcess = null;
-                }
-            }
         }
     }
 
@@ -545,16 +490,10 @@ internal sealed class NativeBuildPipeline
             ConfigureManagedTools(managedTools);
         }
 
-        bool hasVisualStudio = await ImportVisualStudioEnvironmentAsync(cancellationToken);
         List<string> missing = new();
-        if (!hasVisualStudio)
-        {
-            missing.Add("Microsoft C++ and Clang compiler");
-        }
-
         if (managedTools is null)
         {
-            missing.Add("portable Git, CMake, Ninja, and Python");
+            missing.Add("private portable Git, CMake, Ninja, Python, compiler, and Windows SDK");
         }
         else
         {
@@ -570,23 +509,36 @@ internal sealed class NativeBuildPipeline
                 "portable Python",
                 missing,
                 cancellationToken);
-        }
-
-        if (hasVisualStudio)
-        {
-            if (!VisualStudioClangIsAvailable())
-            {
-                missing.Add("Visual Studio Clang compiler");
-            }
-            else
-            {
-                await ValidateManagedToolAsync(
-                    clang,
-                    new[] { "--version" },
-                    "Visual Studio Clang compiler",
-                    missing,
-                    cancellationToken);
-            }
+            await ValidateManagedToolAsync(
+                cCompiler,
+                new[] { "--version" },
+                "portable C compiler",
+                missing,
+                cancellationToken);
+            await ValidateManagedToolAsync(
+                cxxCompiler,
+                new[] { "--version" },
+                "portable C++ compiler",
+                missing,
+                cancellationToken);
+            await ValidateManagedToolAsync(
+                resourceCompiler,
+                new[] { "--version" },
+                "portable Windows resource compiler",
+                missing,
+                cancellationToken);
+            await ValidateManagedToolAsync(
+                archiver,
+                new[] { "--version" },
+                "portable archiver",
+                missing,
+                cancellationToken);
+            await ValidateManagedToolAsync(
+                ranlib,
+                new[] { "--version" },
+                "portable archive indexer",
+                missing,
+                cancellationToken);
         }
 
         if (missing.Count != 0)
@@ -620,22 +572,34 @@ internal sealed class NativeBuildPipeline
         cmake = paths.CMake;
         ninja = paths.Ninja;
         python = new PythonCommand(paths.Python, Array.Empty<string>());
-        PrependPath(Path.GetDirectoryName(paths.Git)!);
-        PrependPath(Path.GetDirectoryName(paths.CMake)!);
-        PrependPath(Path.GetDirectoryName(paths.Ninja)!);
-        PrependPath(Path.GetDirectoryName(paths.Python)!);
-    }
+        cCompiler = paths.CCompiler;
+        cxxCompiler = paths.CxxCompiler;
+        resourceCompiler = paths.ResourceCompiler;
+        archiver = paths.Archiver;
+        ranlib = paths.Ranlib;
 
-    private void PrependPath(string directory)
-    {
-        string current = environment.GetValueOrDefault("Path") ?? "";
-        environment["Path"] = directory + Path.PathSeparator + current;
+        string windowsDirectory = environment.GetValueOrDefault("SystemRoot") ??
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        string systemDirectory = Environment.SystemDirectory;
+        environment["Path"] = string.Join(
+            Path.PathSeparator,
+            new[]
+            {
+                paths.CompilerBinDirectory,
+                Path.GetDirectoryName(paths.Git),
+                Path.GetDirectoryName(paths.CMake),
+                Path.GetDirectoryName(paths.Ninja),
+                Path.GetDirectoryName(paths.Python),
+                systemDirectory,
+                windowsDirectory,
+            }
+            .Where(directory => !string.IsNullOrWhiteSpace(directory))
+            .Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
     private void LoadCurrentEnvironment()
     {
         environment.Clear();
-        clang = "clang-cl.exe";
         foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
         {
             if (entry.Key is string key && entry.Value is string value)
@@ -643,153 +607,22 @@ internal sealed class NativeBuildPipeline
                 environment[key] = value;
             }
         }
-
-        string? machinePath = Environment.GetEnvironmentVariable(
-            "Path", EnvironmentVariableTarget.Machine);
-        string? userPath = Environment.GetEnvironmentVariable(
-            "Path", EnvironmentVariableTarget.User);
-        environment["Path"] = string.Join(
-            Path.PathSeparator,
-            new[] { machinePath, userPath, environment.GetValueOrDefault("Path") }
-                .Where(value => !string.IsNullOrWhiteSpace(value)));
+        environment["Path"] = "";
     }
 
-    private async Task<bool> ImportVisualStudioEnvironmentAsync(
-        CancellationToken cancellationToken)
-    {
-        string vswhere = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-            "Microsoft Visual Studio",
-            "Installer",
-            "vswhere.exe");
-        if (!File.Exists(vswhere))
+    private string[] PortableCMakeArguments() =>
+        new[]
         {
-            return false;
-        }
-
-        ProcessResult locationResult = await RunProcessAsync(
-            vswhere,
-            new[]
-            {
-                "-latest",
-                "-products", "*",
-                "-requires",
-                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-                "Microsoft.VisualStudio.Component.VC.Llvm.Clang",
-                "-property", "installationPath",
-            },
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            cancellationToken,
-            false);
-        string? installation = locationResult.Output
-            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(line => line.Trim())
-            .FirstOrDefault(line => line.Length != 0);
-        if (locationResult.ExitCode != 0 || string.IsNullOrWhiteSpace(installation))
-        {
-            return false;
-        }
-
-        string devCommand = Path.Combine(installation, "Common7", "Tools", "VsDevCmd.bat");
-        if (!File.Exists(devCommand))
-        {
-            return false;
-        }
-
-        string commandInterpreter = environment.GetValueOrDefault("ComSpec") ?? "cmd.exe";
-        string temporaryDirectory = Path.GetTempPath();
-        string scriptName = $"forty-winks-vs-env-{Guid.NewGuid():N}.cmd";
-        string scriptPath = Path.Combine(temporaryDirectory, scriptName);
-        File.WriteAllText(
-            scriptPath,
-            $"@echo off\r\ncall \"{devCommand}\" -no_logo -arch=x64 -host_arch=x64 >nul\r\n" +
-            "if errorlevel 1 exit /b 1\r\nset\r\n",
-            new UTF8Encoding(false));
-        ProcessResult environmentResult;
-        try
-        {
-            environmentResult = await RunProcessAsync(
-                commandInterpreter,
-                new[] { "/d", "/q", "/c", scriptName },
-                temporaryDirectory,
-                cancellationToken,
-                false);
-        }
-        finally
-        {
-            File.Delete(scriptPath);
-        }
-        if (environmentResult.ExitCode != 0)
-        {
-            return false;
-        }
-
-        foreach (string line in environmentResult.Output.Split(new[] { '\r', '\n' }))
-        {
-            int separator = line.IndexOf('=');
-            if (separator > 0)
-            {
-                environment[line[..separator]] = line[(separator + 1)..];
-            }
-        }
-
-        string[] clangCandidates =
-        {
-            Path.Combine(
-                installation, "VC", "Tools", "Llvm", "x64", "bin", "clang-cl.exe"),
-            Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                "LLVM",
-                "bin",
-                "clang-cl.exe"),
+            $"-DCMAKE_C_COMPILER={CMakePath(cCompiler)}",
+            $"-DCMAKE_CXX_COMPILER={CMakePath(cxxCompiler)}",
+            $"-DCMAKE_RC_COMPILER={CMakePath(resourceCompiler)}",
+            $"-DCMAKE_AR={CMakePath(archiver)}",
+            $"-DCMAKE_RANLIB={CMakePath(ranlib)}",
+            $"-DCMAKE_MAKE_PROGRAM={CMakePath(ninja)}",
+            "-DCMAKE_EXE_LINKER_FLAGS=-static",
         };
-        string? visualStudioClang = clangCandidates.FirstOrDefault(File.Exists);
-        if (visualStudioClang is not null)
-        {
-            clang = visualStudioClang;
-            PrependPath(Path.GetDirectoryName(clang)!);
-        }
-        return true;
-    }
 
-    private bool VisualStudioClangIsAvailable() =>
-        Path.IsPathRooted(clang) && File.Exists(clang);
-
-    private string? FindExecutable(string name)
-    {
-        if (Path.IsPathRooted(name))
-        {
-            return File.Exists(name) ? name : null;
-        }
-
-        string? path = environment.GetValueOrDefault("Path");
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        foreach (string directory in path.Split(Path.PathSeparator))
-        {
-            string cleanDirectory = directory.Trim().Trim('"');
-            if (cleanDirectory.Length == 0)
-            {
-                continue;
-            }
-            try
-            {
-                string candidate = Path.Combine(cleanDirectory, name);
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
-            catch (ArgumentException)
-            {
-                // Ignore malformed PATH entries from third-party installers.
-            }
-        }
-        return null;
-    }
+    private static string CMakePath(string path) => path.Replace('\\', '/');
 
     private async Task CheckoutDependencyAsync(
         Dependency dependency,
@@ -901,7 +734,11 @@ internal sealed class NativeBuildPipeline
     {
         ProcessResult alreadyApplied = await RunProcessAsync(
             git,
-            new[] { "-C", directory, "apply", "--reverse", "--check", patchPath },
+            new[]
+            {
+                "-C", directory, "apply", "--ignore-whitespace",
+                "--reverse", "--check", patchPath,
+            },
             sourceDirectory,
             cancellationToken,
             false);
@@ -913,7 +750,10 @@ internal sealed class NativeBuildPipeline
 
         ProcessResult canApply = await RunProcessAsync(
             git,
-            new[] { "-C", directory, "apply", "--check", patchPath },
+            new[]
+            {
+                "-C", directory, "apply", "--ignore-whitespace", "--check", patchPath,
+            },
             sourceDirectory,
             cancellationToken,
             false);
@@ -925,7 +765,7 @@ internal sealed class NativeBuildPipeline
 
         await RunRequiredAsync(
             git,
-            new[] { "-C", directory, "apply", patchPath },
+            new[] { "-C", directory, "apply", "--ignore-whitespace", patchPath },
             sourceDirectory,
             cancellationToken);
         WriteOutput($"Applied {name} compatibility patch.");

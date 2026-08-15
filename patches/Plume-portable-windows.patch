@@ -1,0 +1,30 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 8c239f4..fe0f1d7 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -474,7 +474,12 @@ namespace plume {
+         case RenderHeapType::READBACK:
+             return D3D12_HEAP_TYPE_READBACK;
+         case RenderHeapType::GPU_UPLOAD:
++#if defined(__MINGW32__)
++            // llvm-mingw's Windows headers do not name this newer enum yet.
++            return static_cast<D3D12_HEAP_TYPE>(5);
++#else
+             return D3D12_HEAP_TYPE_GPU_UPLOAD;
++#endif
+         default:
+             assert(false && "Unknown heap type.");
+             return D3D12_HEAP_TYPE_DEFAULT;
+diff --git a/plume_render_interface_types.h b/plume_render_interface_types.h
+index 9dcfedf..3d169f1 100644
+--- a/plume_render_interface_types.h
++++ b/plume_render_interface_types.h
+@@ -16,7 +16,7 @@
+ #include <cstdint>
+ 
+ #if defined(_WIN64)
+-#include <Windows.h>
++#include <windows.h>
+ #elif defined(__ANDROID__)
+ #include "android/native_window.h"
+ #elif defined(__linux__) && !defined(PLUME_SDL_VULKAN_ENABLED)

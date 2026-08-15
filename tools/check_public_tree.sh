@@ -51,6 +51,17 @@ if git grep -n -I -E 'winget(\.exe)?' -- packaging/windows/launcher; then
     failed=1
 fi
 
+if git grep -n -I -E 'vswhere|Visual Studio|clang-cl|Verb = "runas"|download-compiler-setup' -- packaging/windows/launcher; then
+    echo "Windows launcher must not depend on or install machine-wide compiler tools." >&2
+    failed=1
+fi
+
+if ! grep -Fq 'b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35' \
+        packaging/windows/launcher/ManagedToolchain.cs; then
+    echo "Pinned LLVM-MinGW archive verification is missing." >&2
+    failed=1
+fi
+
 if [ "$(grep -Fc '#if defined(__clang__) && !_SDL_HAS_BUILTIN(_m_prefetch)' patches/SDL2.patch)" -ne 2 ]; then
     echo "SDL2 Clang compatibility guards are missing." >&2
     failed=1

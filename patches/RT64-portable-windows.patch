@@ -1,0 +1,347 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2fb01e5..36e089d 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -99,8 +99,13 @@ endif()
+ set(ANDROID_PLATFORM android-24)
+ set(ANDROID_ABI arm64-v8a)
+ 
+-# For DXC
+-set (DXC_COMMON_OPTS "-I${PROJECT_SOURCE_DIR}/src")
++# For DXC. Wine needs an explicit drive prefix for include search paths.
++set (CPP_COMMON_OPTS "-I${PROJECT_SOURCE_DIR}/src")
++if (WIN32 AND CMAKE_CROSSCOMPILING AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
++    set (DXC_COMMON_OPTS "-IZ:${PROJECT_SOURCE_DIR}/src")
++else()
++    set (DXC_COMMON_OPTS "${CPP_COMMON_OPTS}")
++endif()
+ set (DXC_DXIL_OPTS "-Wno-ignored-attributes")
+ set (DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
+ set (DXC_LB_OPTS "${DXC_COMMON_OPTS}" "-D" "LIBRARY" "-T" "lib_6_3")
+@@ -111,8 +116,14 @@ set (DXC_GS_OPTS "${DXC_COMMON_OPTS}" "-E" "GSMain" "-T gs_6_3")
+ set (DXC_RT_OPTS "${DXC_COMMON_OPTS}" "-D" "RT_SHADER" "-T" "lib_6_3" "-fspv-target-env=vulkan1.1spirv1.4" "-fspv-extension=SPV_KHR_ray_tracing" "-fspv-extension=SPV_EXT_descriptor_indexing")
+ 
+ function(build_shader_spirv_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
++    set(DXC_FILENAME "${FILENAME}")
++    set(DXC_OUTNAME "${OUTNAME}")
++    if (WIN32 AND CMAKE_CROSSCOMPILING AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
++        string(PREPEND DXC_FILENAME "Z:")
++        string(PREPEND DXC_OUTNAME "Z:")
++    endif()
+     add_custom_command(OUTPUT ${OUTNAME}.spv
+-        COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.spv
++        COMMAND ${DXC} ${DXC_SPV_OPTS} ${ARGN} ${DXC_FILENAME} /Fo ${DXC_OUTNAME}.spv
+         DEPENDS ${FILENAME})
+     add_custom_command(OUTPUT ${OUTNAME}.spirv.c
+         COMMAND file_to_c ${OUTNAME}.spv ${TARGET_NAME}BlobSPIRV ${OUTNAME}.spirv.c ${OUTNAME}.spirv.h
+@@ -122,8 +133,14 @@ function(build_shader_spirv_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
+ endfunction()
+ 
+ function(build_shader_dxil_impl TARGETOBJ FILENAME TARGET_NAME OUTNAME)
++    set(DXC_FILENAME "${FILENAME}")
++    set(DXC_OUTNAME "${OUTNAME}")
++    if (WIN32 AND CMAKE_CROSSCOMPILING AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
++        string(PREPEND DXC_FILENAME "Z:")
++        string(PREPEND DXC_OUTNAME "Z:")
++    endif()
+     add_custom_command(OUTPUT ${OUTNAME}.dxil
+-        COMMAND ${DXC} ${DXC_DXIL_OPTS} ${ARGN} ${FILENAME} /Fo ${OUTNAME}.dxil
++        COMMAND ${DXC} ${DXC_DXIL_OPTS} ${ARGN} ${DXC_FILENAME} /Fo ${DXC_OUTNAME}.dxil
+         DEPENDS ${FILENAME})
+     add_custom_command(OUTPUT ${OUTNAME}.dxil.c
+         COMMAND file_to_c ${OUTNAME}.dxil ${TARGET_NAME}BlobDXIL ${OUTNAME}.dxil.c ${OUTNAME}.dxil.h
+@@ -238,7 +255,7 @@ function(preprocess_shader TARGETOBJ SHADERNAME)
+     set(OUTNAME "${CMAKE_BINARY_DIR}/${SHADERNAME}")
+     cmake_path(GET SHADERNAME STEM TARGET_NAME)
+     cmake_path(GET OUTNAME PARENT_PATH OUTPUT_DIR)
+-    preprocess(${FILENAME} ${OUTNAME}.rw ${DXC_COMMON_OPTS})
++    preprocess(${FILENAME} ${OUTNAME}.rw ${CPP_COMMON_OPTS})
+     add_custom_command(OUTPUT ${OUTNAME}.rw.c
+         COMMAND file_to_c ${OUTNAME}.rw ${TARGET_NAME}Text ${OUTNAME}.rw.c ${OUTNAME}.rw.h
+         DEPENDS ${OUTNAME}.rw file_to_c
+@@ -284,8 +301,15 @@ endfunction()
+ # Point cmake at src/contrib/mupen64plus-win32-deps/SDL2-2.26.3 for SDL2 on windows, look for an installed package on other systems
+ if (WIN32)
+     set(SDL2_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include")
+-    set(SDL2_LIBRARIES "SDL2" "SDL2main")
+-    link_directories("${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
++    if (MINGW)
++        set(SDL2_LIBRARIES
++            "${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64/SDL2.lib"
++            "${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64/SDL2main.lib"
++        )
++    else()
++        set(SDL2_LIBRARIES "SDL2" "SDL2main")
++        link_directories("${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
++    endif()
+ else()
+     find_package(SDL2 REQUIRED)
+ endif()
+@@ -463,12 +487,25 @@ if (WIN32)
+         "${PROJECT_SOURCE_DIR}/src/contrib/imgui/backends/imgui_impl_dx12.cpp"
+         "${PROJECT_SOURCE_DIR}/src/contrib/imgui/backends/imgui_impl_win32.cpp"
+     )
+-    target_link_libraries(rt64
+-        delayimp.lib
+-        D3D12
+-        DXGI
+-        Shcore.lib
+-        ${PROJECT_SOURCE_DIR}/src/contrib/dxc/lib/x64/dxcompiler.lib)
++    if (MINGW)
++        target_link_libraries(rt64
++            delayimp
++            d3d12
++            d3dcompiler
++            dwmapi
++            dxgi
++            dxguid
++            shcore
++            ${PROJECT_SOURCE_DIR}/src/contrib/dxc/lib/x64/dxcompiler.lib)
++    else()
++        target_link_libraries(rt64
++            delayimp.lib
++            D3D12
++            DXGI
++            dxguid
++            Shcore.lib
++            ${PROJECT_SOURCE_DIR}/src/contrib/dxc/lib/x64/dxcompiler.lib)
++    endif()
+ 
+     target_include_directories(rt64 PRIVATE ${zstd_SOURCE_DIR}/lib)
+ endif()
+@@ -553,4 +590,3 @@ build_pixel_shader(  rt64 "src/shaders/Im3DPS.hlsl")
+ build_pixel_shader(  rt64 "src/shaders/PostProcessPS.hlsl")
+ 
+ target_include_directories(rt64 PRIVATE ${CMAKE_BINARY_DIR}/src)
+-
+diff --git a/src/common/rt64_dynamic_libraries.cpp b/src/common/rt64_dynamic_libraries.cpp
+index 56b2b04..0c904bd 100644
+--- a/src/common/rt64_dynamic_libraries.cpp
++++ b/src/common/rt64_dynamic_libraries.cpp
+@@ -8,7 +8,7 @@
+ #include <filesystem>
+ 
+ #if defined(_WIN32)
+-#   include <Windows.h>
++#   include <windows.h>
+ #   include "utf8conv/utf8conv.h"
+ #endif
+ 
+@@ -59,4 +59,4 @@ namespace RT64 {
+ 
+         return true;
+     }
+-};
+\ No newline at end of file
++};
+diff --git a/src/common/rt64_mapped_file.h b/src/common/rt64_mapped_file.h
+index ff1c45a..3550839 100644
+--- a/src/common/rt64_mapped_file.h
++++ b/src/common/rt64_mapped_file.h
+@@ -7,7 +7,7 @@
+ #include <filesystem>
+ 
+ #if defined(_WIN32)
+-#   include <Windows.h>
++#   include <windows.h>
+ #else
+ #   include <sys/mman.h>
+ #endif
+@@ -33,4 +33,4 @@ namespace RT64 {
+         uint8_t *data() const;
+         size_t size() const;
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/common/rt64_sommelier.h b/src/common/rt64_sommelier.h
+index 15b9b10..5848a3e 100644
+--- a/src/common/rt64_sommelier.h
++++ b/src/common/rt64_sommelier.h
+@@ -6,7 +6,7 @@
+ 
+ #if defined(_WIN32)
+ 
+-#include <Windows.h>
++#include <windows.h>
+ 
+ namespace RT64 {
+     struct Sommelier {
+@@ -30,4 +30,4 @@ namespace RT64 {
+     };
+ };
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/src/common/rt64_thread.cpp b/src/common/rt64_thread.cpp
+index c4b080b..2f662ab 100644
+--- a/src/common/rt64_thread.cpp
++++ b/src/common/rt64_thread.cpp
+@@ -8,7 +8,7 @@
+ #include <thread>
+ 
+ #if defined(_WIN64)
+-#   include <Windows.h>
++#   include <windows.h>
+ #   include "utf8conv/utf8conv.h"
+ #elif defined(__linux__)
+ #   include <pthread.h>
+diff --git a/src/common/rt64_tmem_hasher.h b/src/common/rt64_tmem_hasher.h
+index 9a332ab..99f37bf 100644
+--- a/src/common/rt64_tmem_hasher.h
++++ b/src/common/rt64_tmem_hasher.h
+@@ -23,7 +23,7 @@ static unsigned bitScanForward64(uint64_t val) {
+         __assume(0);
+     }
+ #endif
+-#elif defined(__GNUC__) && (__GNUC__ >= 4) && defined(__LP64__)
++#elif defined(__clang__) || (defined(__GNUC__) && (__GNUC__ >= 4))
+     return (unsigned)__builtin_ctzll(val);
+ #elif defined(__ICCARM__)
+     return (unsigned)__builtin_ctzll(val);
+@@ -206,4 +206,4 @@ namespace RT64 {
+             return (bytesToHash > tmemSize);
+         }
+     };
+-};
+\ No newline at end of file
++};
+diff --git a/src/common/rt64_user_paths.cpp b/src/common/rt64_user_paths.cpp
+index f38d8eb..6b4dd97 100644
+--- a/src/common/rt64_user_paths.cpp
++++ b/src/common/rt64_user_paths.cpp
+@@ -8,7 +8,7 @@
+ #   include <unistd.h>
+ #   include <pwd.h>
+ #elif defined(_WIN32)
+-#   include <Shlobj.h>
++#   include <shlobj.h>
+ #elif defined(__APPLE__)
+ #   include "apple/rt64_apple.h"
+ #endif
+diff --git a/src/contrib/utf8conv/utf8conv.h b/src/contrib/utf8conv/utf8conv.h
+index a541b32..30eccc4 100644
+--- a/src/contrib/utf8conv/utf8conv.h
++++ b/src/contrib/utf8conv/utf8conv.h
+@@ -43,7 +43,7 @@
+ //
+ 
+ #include <crtdbg.h>      // For _ASSERTE()
+-#include <Windows.h>     // Win32 Platform SDK main header        
++#include <windows.h>     // Win32 Platform SDK main header
+ 
+ #include <limits>        // For std::numeric_limits
+ #include <stdexcept>     // For std::overflow_error
+diff --git a/src/gui/rt64_inspector.h b/src/gui/rt64_inspector.h
+index 558f1ee..cd6a8b3 100644
+--- a/src/gui/rt64_inspector.h
++++ b/src/gui/rt64_inspector.h
+@@ -8,7 +8,7 @@
+ #include <filesystem>
+ 
+ #ifdef _WIN32
+-#include <Windows.h>
++#include <windows.h>
+ #endif
+ 
+ #include "common/rt64_common.h"
+diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
+index cd0f777..48fe7d3 100755
+--- a/src/hle/rt64_application_window.cpp
++++ b/src/hle/rt64_application_window.cpp
+@@ -9,8 +9,8 @@
+ #include <SDL.h>
+ 
+ #if defined(_WIN32)
+-#   include <Windows.h>
+-#   include <ShellScalingAPI.h>
++#   include <windows.h>
++#   include <shellscalingapi.h>
+ #elif defined(__linux__)
+ #   define Status int
+ #   if !defined(RT64_SDL_WINDOW_VULKAN)
+@@ -101,7 +101,17 @@ namespace RT64 {
+         } bounds{};
+ 
+ #   if defined(_WIN32)
+-        SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
++        // Resolve the Windows 8.1 API at runtime so builds do not depend on a
++        // particular Windows SDK declaration or fail to start on older hosts.
++        if (HMODULE shcore = LoadLibraryW(L"shcore.dll")) {
++            using SetProcessDpiAwarenessFn = HRESULT(WINAPI *)(PROCESS_DPI_AWARENESS);
++            auto setProcessDpiAwareness = reinterpret_cast<SetProcessDpiAwarenessFn>(
++                GetProcAddress(shcore, "SetProcessDpiAwareness"));
++            if (setProcessDpiAwareness != nullptr) {
++                setProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
++            }
++            FreeLibrary(shcore);
++        }
+ 
+         RECT rect;
+         UINT dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+diff --git a/src/hle/rt64_application_window.h b/src/hle/rt64_application_window.h
+index 73f8222..0c7e70b 100644
+--- a/src/hle/rt64_application_window.h
++++ b/src/hle/rt64_application_window.h
+@@ -6,7 +6,7 @@
+ 
+ #include "common/rt64_plume.h"
+ #ifdef _WIN32
+-#include <Windows.h>
++#include <windows.h>
+ #elif defined(__APPLE__)
+ #include "apple/rt64_apple.h"
+ #include "plume_apple.h"
+diff --git a/src/render/rt64_optimus.cpp b/src/render/rt64_optimus.cpp
+index 348aa52..3436b0b 100644
+--- a/src/render/rt64_optimus.cpp
++++ b/src/render/rt64_optimus.cpp
+@@ -4,11 +4,11 @@
+ 
+ #ifdef _WIN32
+ 
+-#include <Windows.h>
++#include <windows.h>
+ 
+ extern "C" {
+     // Exporting this flag indicates to the NVIDIA driver that it should prefer using the high performance device.
+-    _declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
++    __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+ }
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/src/render/rt64_shader_compiler.h b/src/render/rt64_shader_compiler.h
+index e7c3377..ea4d343 100644
+--- a/src/render/rt64_shader_compiler.h
++++ b/src/render/rt64_shader_compiler.h
+@@ -6,8 +6,21 @@
+ 
+ #if defined(_WIN32)
+ 
+-#include <Windows.h>
++#include <windows.h>
++#include <objidl.h>
++#include <unknwn.h>
++#if defined(__MINGW32__)
++#define RT64_MINGW_DXC_UUIDS
++#define CROSS_PLATFORM_UUIDOF(interface, spec) struct interface;
++#endif
+ #include <dxcapi.h>
++#if defined(RT64_MINGW_DXC_UUIDS)
++#undef CROSS_PLATFORM_UUIDOF
++#undef RT64_MINGW_DXC_UUIDS
++__CRT_UUID_DECL(IDxcCompiler, 0x8c210bf3, 0x011f, 0x4422, 0x8d, 0x70, 0x6f, 0x9a, 0xcb, 0x8d, 0xb6, 0x17)
++__CRT_UUID_DECL(IDxcUtils, 0x4605c4cb, 0x2019, 0x492a, 0xad, 0xa4, 0x65, 0xf2, 0x0b, 0xb7, 0xd6, 0x7f)
++__CRT_UUID_DECL(IDxcLinker, 0xf1b5be2a, 0x62dd, 0x4327, 0xa1, 0xc2, 0x42, 0xac, 0x1e, 0x1e, 0x78, 0xe6)
++#endif
+ 
+ #include <string>
+ 
+@@ -38,4 +51,3 @@ namespace RT64 {
+ };
+ 
+ #endif
+-

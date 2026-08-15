@@ -14,9 +14,9 @@ This repository does not vendor the dependency source trees. The bootstrap scrip
 | [CMake](https://github.com/Kitware/CMake) | `3.31.10` | BSD-3-Clause | Private build configuration tool |
 | [Ninja](https://github.com/ninja-build/ninja) | `1.13.2` | Apache-2.0 | Private build executor |
 | [Python](https://www.python.org/) | `3.13.14` embeddable package | Python Software Foundation License | Private symbol generation tool |
+| [LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw) | `20260616` UCRT x86-64 | Apache-2.0 WITH LLVM-exception and bundled third-party terms | Private C/C++ compiler, linker, runtime, Windows headers, and import libraries |
 | [SDL](https://github.com/libsdl-org/SDL) | `2.26.3` through RT64 | Zlib | Window, input, and audio platform layer; compatibility patch applied at build time |
-| [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) | Current channel bootstrapper | Microsoft license terms | C++ SDK and bundled Clang compiler installed from Microsoft's service |
 
-Copies of the applicable MIT license texts are under `LICENSES/`. N64ModernRuntime's GPL-3.0 terms are reproduced in the root `LICENSE` file. The .NET Runtime's complete current [third-party notices](https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT) remain available from its official repository.
+Copies of the applicable MIT license texts are under `LICENSES/`. N64ModernRuntime's GPL-3.0 terms are reproduced in the root `LICENSE` file. The .NET Runtime's complete current [third-party notices](https://github.com/dotnet/runtime/blob/main/THIRD-PARTY-NOTICES.TXT) remain available from its official repository. The downloaded LLVM-MinGW archive includes its complete `LICENSE.TXT` and component notices.
 
 The project name is used only to identify compatibility. No game ROM, artwork, audio, video, text dump, or other game asset is licensed or distributed here.

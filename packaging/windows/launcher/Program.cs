@@ -49,13 +49,13 @@ internal static class Program
             {
                 return RunPortableToolInstall(args);
             }
-            if (args.Contains("--download-compiler-setup", StringComparer.OrdinalIgnoreCase))
-            {
-                return RunCompilerSetupDownload(args);
-            }
             if (args.Contains("--toolchain-smoke-test", StringComparer.OrdinalIgnoreCase))
             {
                 return RunToolchainSmokeTest(args);
+            }
+            if (args.Contains("--build-only", StringComparer.OrdinalIgnoreCase))
+            {
+                return RunBuildOnly(args);
             }
 
             Directory.CreateDirectory(AppDataDirectory);
@@ -238,6 +238,10 @@ internal static class Program
                 "tools/generate_recomp_symbols.py",
                 "recomp/40winks.toml",
                 "patches/SDL2.patch",
+                "patches/N64ModernRuntime-portable-windows.patch",
+                "patches/RT64-portable-windows.patch",
+                "patches/Plume-portable-windows.patch",
+                "patches/D3D12MemoryAllocator-portable-windows.patch",
             };
             foreach (string requiredEntry in required)
             {
@@ -263,7 +267,7 @@ internal static class Program
                 }
             }
 
-            string message = $"PowerShell-free Windows launcher diagnostics passed: {entries.Count} public files; build {BuildId}.";
+            string message = $"Self-contained Windows launcher diagnostics passed: {entries.Count} public files; build {BuildId}.";
             int outputIndex = Array.FindIndex(args, argument =>
                 argument.Equals("--diagnostics-output", StringComparison.OrdinalIgnoreCase));
             if (outputIndex >= 0 && outputIndex + 1 < args.Length)
@@ -340,25 +344,6 @@ internal static class Program
         }
     }
 
-    private static int RunCompilerSetupDownload(string[] args)
-    {
-        try
-        {
-            NativeBuildPipeline pipeline = new();
-            pipeline.DownloadCompilerSetupAsync(CancellationToken.None).GetAwaiter().GetResult();
-            WriteDiagnosticsOutput(
-                args,
-                $"Microsoft compiler setup download is verified; build {BuildId}." +
-                Environment.NewLine);
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
-            return 1;
-        }
-    }
-
     private static int RunToolchainSmokeTest(string[] args)
     {
         try
@@ -377,6 +362,69 @@ internal static class Program
             WriteDiagnosticsOutput(args, exception + Environment.NewLine);
             return 1;
         }
+    }
+
+    private static int RunBuildOnly(string[] args)
+    {
+        try
+        {
+            string romPath = ReadRequiredOption(args, "--rom");
+            string outputDirectory = ReadRequiredOption(args, "--output");
+            if (!RomHashMatches(romPath))
+            {
+                throw new InvalidDataException(
+                    "The selected ROM is not the supported clean USA aftermarket revision.");
+            }
+
+            int jobs = Math.Max(1, Math.Min(Environment.ProcessorCount - 1, 4));
+            string? jobsText = ReadOption(args, "--jobs");
+            if (jobsText is not null &&
+                (!int.TryParse(jobsText, out jobs) || jobs < 1 || jobs > 16))
+            {
+                throw new ArgumentException("--jobs must be a number from 1 to 16.");
+            }
+
+            string sourceDirectory = ExtractSourcePayload();
+            NativeBuildPipeline pipeline = new();
+            pipeline.BuildAsync(
+                sourceDirectory,
+                romPath,
+                outputDirectory,
+                jobs,
+                CancellationToken.None).GetAwaiter().GetResult();
+
+            Directory.CreateDirectory(outputDirectory);
+            File.WriteAllText(Path.Combine(outputDirectory, ".builder-version"), BuildId);
+            InstallLauncherCopy(outputDirectory);
+            LauncherConfig config = new()
+            {
+                RomPath = Path.GetFullPath(romPath),
+                OutputDirectory = Path.GetFullPath(outputDirectory),
+                BuildId = BuildId,
+            };
+            config.Save(ConfigPath);
+            WriteDiagnosticsOutput(
+                args,
+                $"Portable Windows playable build completed; build {BuildId}." +
+                Environment.NewLine);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            WriteDiagnosticsOutput(args, exception + Environment.NewLine);
+            return 1;
+        }
+    }
+
+    private static string ReadRequiredOption(string[] args, string name) =>
+        ReadOption(args, name) ??
+        throw new ArgumentException($"{name} requires a value.");
+
+    private static string? ReadOption(string[] args, string name)
+    {
+        int index = Array.FindIndex(args, argument =>
+            argument.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
     }
 
     private static void WriteDiagnosticsOutput(string[] args, string text)

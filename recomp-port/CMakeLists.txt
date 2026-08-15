@@ -130,6 +130,7 @@ target_include_directories(forty-winks-recomp PRIVATE
     "${RECOMPILED_FUNCS_DIR}"
     "${RT64_DIR}/src"
     "${RT64_DIR}/src/contrib"
+    "${RT64_DIR}/src/contrib/dxc/inc"
     "${RT64_DIR}/src/contrib/hlslpp/include"
     "${RT64_DIR}/src/contrib/imgui"
     "${RT64_DIR}/src/contrib/plume"
@@ -178,11 +179,15 @@ if(WIN32)
             "$<TARGET_FILE_DIR:forty-winks-recomp>"
         VERBATIM
     )
-    set_target_properties(forty-winks-recomp PROPERTIES
-        LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
-        LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
-        LINK_FLAGS_MINSIZEREL "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
-    )
+    if(MINGW)
+        target_link_options(forty-winks-recomp PRIVATE -mwindows)
+    else()
+        set_target_properties(forty-winks-recomp PROPERTIES
+            LINK_FLAGS_RELEASE "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+            LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+            LINK_FLAGS_MINSIZEREL "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+        )
+    endif()
 endif()
 
 include(CTest)

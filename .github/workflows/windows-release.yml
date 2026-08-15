@@ -35,15 +35,11 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Check Windows build tools
-        shell: powershell
-        run: .\packaging\windows\build_playable.ps1 -CheckOnly
-
       - name: Build ROM-free Windows setup
         shell: powershell
         run: >-
           .\packaging\windows\build_release.ps1
-          -Version "0.1.5-alpha"
+          -Version "0.1.6-alpha"
           -BuildId "${{ github.sha }}"
 
       - name: Verify embedded public payload
@@ -62,7 +58,7 @@ jobs:
           Get-Content $result
 
       - name: Verify portable tool installation
-        timeout-minutes: 10
+        timeout-minutes: 15
         shell: powershell
         run: |
           $result = Join-Path $env:RUNNER_TEMP "windows-portable-tools.txt"
@@ -77,24 +73,8 @@ jobs:
           }
           Get-Content $result
 
-      - name: Verify compiler setup download
-        timeout-minutes: 5
-        shell: powershell
-        run: |
-          $result = Join-Path $env:RUNNER_TEMP "windows-compiler-download.txt"
-          $process = Start-Process `
-              -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
-              -ArgumentList @("--download-compiler-setup", "--diagnostics-output", "`"$result`"") `
-              -PassThru
-          $process.WaitForExit()
-          if ($process.ExitCode -ne 0) {
-              if (Test-Path $result) { Get-Content $result }
-              throw "Microsoft compiler setup download failed."
-          }
-          Get-Content $result
-
       - name: Verify native build-tool discovery
-        timeout-minutes: 5
+        timeout-minutes: 10
         shell: powershell
         run: |
           $result = Join-Path $env:RUNNER_TEMP "windows-requirements-diagnostics.txt"

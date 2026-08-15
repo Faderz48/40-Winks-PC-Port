@@ -9,7 +9,13 @@ internal sealed record ManagedToolPaths(
     string Git,
     string CMake,
     string Ninja,
-    string Python);
+    string Python,
+    string CCompiler,
+    string CxxCompiler,
+    string ResourceCompiler,
+    string Archiver,
+    string Ranlib,
+    string CompilerBinDirectory);
 
 internal sealed class ManagedToolchain
 {
@@ -23,7 +29,9 @@ internal sealed class ManagedToolchain
         int ProgressStart,
         int ProgressEnd);
 
-    private const string ToolchainVersion = "windows-x64-v1";
+    private const string ToolchainVersion = "windows-x64-v2";
+    private const string LlvmMingwDirectory =
+        "llvm-mingw-20260616-ucrt-x86_64";
     private static readonly ToolArchive[] Archives =
     {
         new(
@@ -62,17 +70,19 @@ internal sealed class ManagedToolchain
             "python.exe",
             46,
             58),
+        new(
+            "llvm-mingw",
+            "portable C++ compiler and Windows SDK",
+            "llvm-mingw-20260616-ucrt-x86_64.zip",
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/20260616/llvm-mingw-20260616-ucrt-x86_64.zip",
+            "b9b68a4d276e16fa25802aaba458e4638f64b3884c290aaccdc2d87083b6ca35",
+            Path.Combine(
+                LlvmMingwDirectory,
+                "bin",
+                "x86_64-w64-mingw32-clang.exe"),
+            58,
+            95),
     };
-
-    private static readonly ToolArchive CompilerBootstrapper = new(
-        "visual-studio-bootstrapper",
-        "Microsoft C++ compiler setup",
-        "vs_BuildTools-17.exe",
-        "https://download.visualstudio.microsoft.com/download/pr/00d9d26c-2727-42c2-aa9e-eda63b03e1ee/15df9d3b4c2b2eaf44704d5e938c895341b9cd8ba40a9a18610f8d18cbe01b53/vs_BuildTools.exe",
-        "15df9d3b4c2b2eaf44704d5e938c895341b9cd8ba40a9a18610f8d18cbe01b53",
-        "vs_BuildTools-17.exe",
-        59,
-        65);
 
     private static readonly HttpClient HttpClient = CreateHttpClient();
 
@@ -102,11 +112,32 @@ internal sealed class ManagedToolchain
             executables[archive.Id] = executable;
         }
 
+        string compilerBin = Path.GetDirectoryName(executables["llvm-mingw"])!;
+        string cxxCompiler = Path.Combine(
+            compilerBin, "x86_64-w64-mingw32-clang++.exe");
+        string resourceCompiler = Path.Combine(
+            compilerBin, "x86_64-w64-mingw32-windres.exe");
+        string archiver = Path.Combine(compilerBin, "llvm-ar.exe");
+        string ranlib = Path.Combine(compilerBin, "llvm-ranlib.exe");
+        if (!File.Exists(cxxCompiler) ||
+            !File.Exists(resourceCompiler) ||
+            !File.Exists(archiver) ||
+            !File.Exists(ranlib))
+        {
+            return null;
+        }
+
         return new ManagedToolPaths(
             executables["git"],
             executables["cmake"],
             executables["ninja"],
-            executables["python"]);
+            executables["python"],
+            executables["llvm-mingw"],
+            cxxCompiler,
+            resourceCompiler,
+            archiver,
+            ranlib,
+            compilerBin);
     }
 
     public async Task<ManagedToolPaths> InstallPortableToolsAsync(
@@ -132,13 +163,6 @@ internal sealed class ManagedToolchain
 
         return FindInstalled() ?? throw new InvalidOperationException(
             "The portable Windows tools did not finish installing.");
-    }
-
-    public Task<string> DownloadCompilerBootstrapperAsync(
-        CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(DownloadRoot);
-        return DownloadVerifiedAsync(CompilerBootstrapper, cancellationToken);
     }
 
     private bool ToolIsInstalled(ToolArchive archive)

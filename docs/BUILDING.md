@@ -20,10 +20,9 @@ Players using the downloadable setup need only:
 - Windows 10 or 11 on x86-64
 - An internet connection for first setup
 - Several gigabytes of free build space
-- Administrator approval when Microsoft's C++ compiler is installed
 - A Direct3D 12 or Vulkan capable GPU with current drivers
 
-Windows Package Manager, PowerShell, Git, Python, CMake, and Ninja are not prerequisites. The setup downloads hash-verified portable copies of those open-source tools into `%LOCALAPPDATA%\40WinksBuild`. If required, it downloads Microsoft's official Build Tools bootstrapper directly and selects the C++ and Clang components.
+Windows Package Manager, PowerShell, Visual Studio, a system Windows SDK, Git, Python, CMake, and Ninja are not prerequisites. The setup downloads hash-verified portable copies of Git, Python, CMake, Ninja, and LLVM-MinGW into `%LOCALAPPDATA%\40WinksBuild`. LLVM-MinGW supplies the private C/C++ compiler, linker, runtime, Windows headers, and import libraries without administrator access.
 
 Developers building directly from the source tree need:
 
@@ -99,7 +98,7 @@ Build logs are written to `~/.cache/40-winks-pc-port/build.log`. On first setup 
 
 ## Windows Playable Build
 
-The downloadable Windows setup performs the private generation flow from its native C# pipeline. Select the ROM and output folder in the setup window, then choose **Build & Play**. It downloads and invokes private copies of Git, Python, CMake, and Ninja, and installs Microsoft's compiler directly when needed. PowerShell and Windows Package Manager are not used on the player's computer.
+The downloadable Windows setup performs the private generation flow from its native C# pipeline. Select the ROM and output folder in the setup window, then choose **Build & Play**. It downloads and invokes private copies of Git, Python, CMake, Ninja, and LLVM-MinGW. PowerShell, Windows Package Manager, Visual Studio, and administrator access are not used on the player's computer.
 
 The older command-line helper remains available for developers who explicitly prefer it:
 
@@ -109,12 +108,18 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build_playable.ps1 `
     -OutputDirectory "$HOME\Documents\40 Winks PC Port"
 ```
 
-Both paths import the Visual Studio x64 environment, build with `clang-cl` and Ninja, copy `SDL2.dll`, `dxcompiler.dll`, and `dxil.dll` beside the native executable, and never copy the ROM into the output folder. When invoked directly, start it with `forty-winks-recomp.exe --rom C:\path\to\40-winks.z64`. The public setup also copies `40-Winks-PC-Port.exe` into the output folder so later launches need no arguments.
+The command-line helper is a developer-only legacy path and still uses a locally installed Visual Studio environment. The downloadable setup instead builds with its isolated LLVM-MinGW and Ninja toolchain. Both copy `SDL2.dll`, `dxcompiler.dll`, and `dxil.dll` beside the native executable and never copy the ROM into the output folder. When invoked directly, start it with `forty-winks-recomp.exe --rom C:\path\to\40-winks.z64`. The public setup also copies `40-Winks-PC-Port.exe` into the output folder so later launches need no arguments.
+
+The downloadable setup can run the same private pipeline without opening its window for diagnostics or automation:
+
+```text
+40-Winks-PC-Port-Windows-x64.exe --build-only --rom C:\path\to\40-winks.z64 --output "C:\Games\40 Winks"
+```
 
 The redistributable setup executable is built by the Windows GitHub Actions workflow or locally with PowerShell and the .NET 8 SDK:
 
 ```powershell
-packaging\windows\build_release.ps1 -Version "0.1.5-alpha" -BuildId "local"
+packaging\windows\build_release.ps1 -Version "0.1.6-alpha" -BuildId "local"
 ```
 
 It produces `dist\windows\40-Winks-PC-Port-Windows-x64.exe` and its SHA-256 file. This setup contains only the audited public source and first-run logic. The playable output generated from a ROM remains excluded from public releases.
