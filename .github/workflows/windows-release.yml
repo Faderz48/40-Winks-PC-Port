@@ -53,7 +53,8 @@ jobs:
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
               -ArgumentList @("--diagnostics", "--diagnostics-output", "`"$result`"") `
-              -Wait -PassThru
+              -PassThru
+          $process.WaitForExit()
           if ($process.ExitCode -ne 0) {
               if (Test-Path $result) { Get-Content $result }
               throw "Windows launcher diagnostics failed."
@@ -68,7 +69,8 @@ jobs:
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
               -ArgumentList @("--install-portable-tools", "--diagnostics-output", "`"$result`"") `
-              -Wait -PassThru
+              -PassThru
+          $process.WaitForExit()
           if ($process.ExitCode -ne 0) {
               if (Test-Path $result) { Get-Content $result }
               throw "Self-managed Windows tool download failed."
@@ -83,7 +85,8 @@ jobs:
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
               -ArgumentList @("--download-compiler-setup", "--diagnostics-output", "`"$result`"") `
-              -Wait -PassThru
+              -PassThru
+          $process.WaitForExit()
           if ($process.ExitCode -ne 0) {
               if (Test-Path $result) { Get-Content $result }
               throw "Microsoft compiler setup download failed."
@@ -98,7 +101,8 @@ jobs:
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
               -ArgumentList @("--requirements-check", "--diagnostics-output", "`"$result`"") `
-              -Wait -PassThru
+              -PassThru
+          $process.WaitForExit()
           if ($process.ExitCode -ne 0) {
               if (Test-Path $result) { Get-Content $result }
               throw "Native Windows build-tool discovery failed."
@@ -113,7 +117,8 @@ jobs:
           $process = Start-Process `
               -FilePath .\dist\windows\40-Winks-PC-Port-Windows-x64.exe `
               -ArgumentList @("--toolchain-smoke-test", "--diagnostics-output", "`"$result`"") `
-              -Wait -PassThru
+              -PassThru
+          $process.WaitForExit()
           if ($process.ExitCode -ne 0) {
               if (Test-Path $result) { Get-Content $result }
               throw "Managed Windows compiler smoke test failed."
